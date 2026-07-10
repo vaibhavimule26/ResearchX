@@ -1,26 +1,76 @@
 from app.llm.gemini import generate_answer
 
 
-def recommend_datasets(context):
+def recommend_datasets(context: str) -> str:
     """
-    Recommend datasets for the uploaded research paper.
+    Recommend evidence-grounded datasets for extending,
+    validating, or reproducing the selected research paper.
     """
 
-    prompt = f"""
-You are an expert AI Research Assistant.
+    if not context or not context.strip():
+        return (
+            "Unable to recommend datasets because "
+            "no research paper context was provided."
+        )
 
-Analyze the following research paper and recommend suitable datasets.
+    question = """
+Analyze the provided research paper context as an expert
+research dataset specialist.
 
-For each dataset provide:
+Produce a detailed Dataset Recommendation Report with exactly
+these sections:
 
-1. Dataset Name
-2. Why it is suitable
-3. Link if commonly available
-4. Possible use cases
+1. Paper Data Requirements
+- Identify the type of data required by the paper.
+- Explain the task, domain, input format, output labels,
+  modalities, and evaluation needs when supported by context.
 
-Research Paper:
+2. Datasets Explicitly Mentioned in the Paper
+- List datasets explicitly named in the provided paper context.
+- For each dataset explain how it is used.
+- Do not invent dataset names.
+- If no dataset is explicitly mentioned, clearly state that.
 
-{context}
+3. Recommended Public Datasets
+For each suitable dataset provide:
+- Dataset Name
+- Domain
+- Why It Is Suitable
+- Possible Use Case
+- Expected Data Type or Modality
+- Access Source or Platform, if confidently known
+
+4. Dataset Comparison
+Compare the recommended datasets using:
+- relevance to the paper
+- scale
+- task compatibility
+- likely strengths
+- likely limitations
+
+5. Best Dataset Recommendation
+- Select the single best dataset or dataset combination.
+- Explain why it is the strongest match.
+- Suggest how it could be used in a concrete experiment.
+
+Important rules:
+- Base the analysis on the provided research paper context.
+- Never claim that a dataset was used in the paper unless the
+  provided context explicitly supports that claim.
+- Clearly distinguish:
+  a) datasets explicitly mentioned in the paper
+  b) external datasets recommended by you
+- Do not invent dataset names, benchmark statistics, URLs,
+  licenses, sizes, or access conditions.
+- If exact information is uncertain, say so clearly.
+- Prefer well-established public research datasets when a
+  recommendation can be made confidently.
+- Be specific to this paper.
+- Avoid generic recommendations.
+- Give a detailed answer.
 """
 
-    return generate_answer(prompt, "")
+    return generate_answer(
+        context=context,
+        question=question,
+    )

@@ -12,12 +12,16 @@ import { Button } from "@/components/ui/button";
 
 import {
   getPapers,
-  searchPaper,
+  runAnalysis,
 } from "@/lib/api";
 
 export const Route = createFileRoute("/dashboard/datasets")({
   head: () => ({
-    meta: [{ title: "Datasets — ResearchX" }],
+    meta: [
+      {
+        title: "Datasets — ResearchX",
+      },
+    ],
   }),
   component: DatasetsPage,
 });
@@ -45,10 +49,11 @@ function DatasetsPage() {
     const loadPapers = async () => {
       try {
         setLoadingPapers(true);
+        setError("");
 
         const response = await getPapers();
 
-        const uploadedPapers =
+        const uploadedPapers: Paper[] =
           response?.data?.papers || [];
 
         setPapers(uploadedPapers);
@@ -73,29 +78,29 @@ function DatasetsPage() {
   }, []);
 
   const recommendDatasets = async () => {
-    if (!selectedPaper || loading) return;
+    if (!selectedPaper || loading) {
+      return;
+    }
 
     try {
       setLoading(true);
       setError("");
       setRecommendations("");
 
-      const response = await searchPaper(
-        "Recommend suitable datasets for this research paper. Explain why each dataset is relevant, its task, expected use, and possible evaluation purpose.",
-        `dataset_${Date.now()}`,
-        selectedPaper
+      const response = await runAnalysis(
+        selectedPaper,
+        "datasets"
       );
 
-      const answer =
-        response?.data?.answer;
+      const result = response?.result;
 
-      if (!answer) {
+      if (!result) {
         throw new Error(
-          "No dataset recommendations received"
+          "No dataset recommendations received from backend"
         );
       }
 
-      setRecommendations(answer);
+      setRecommendations(result);
     } catch (error) {
       setError(
         error instanceof Error
@@ -108,18 +113,36 @@ function DatasetsPage() {
   };
 
   const copyRecommendations = async () => {
-    if (!recommendations) return;
+    if (!recommendations) {
+      return;
+    }
 
-    await navigator.clipboard.writeText(
-      recommendations
-    );
+    try {
+      await navigator.clipboard.writeText(
+        recommendations
+      );
+    } catch {
+      setError(
+        "Failed to copy dataset recommendations"
+      );
+    }
   };
 
   const downloadRecommendations = () => {
-    if (!recommendations) return;
+    if (!recommendations) {
+      return;
+    }
+
+    const content = [
+      "ResearchX Dataset Recommendation Report",
+      "",
+      `Paper: ${selectedPaper}`,
+      "",
+      recommendations,
+    ].join("\n");
 
     const blob = new Blob(
-      [recommendations],
+      [content],
       {
         type: "text/plain;charset=utf-8",
       }
@@ -127,11 +150,17 @@ function DatasetsPage() {
 
     const url = URL.createObjectURL(blob);
 
-    const anchor = document.createElement("a");
+    const anchor =
+      document.createElement("a");
+
+    const safeFilename = selectedPaper
+      .replace(/\.pdf$/i, "")
+      .replace(/[^a-zA-Z0-9-_]/g, "_");
 
     anchor.href = url;
+
     anchor.download =
-      `${selectedPaper}-dataset-recommendations.txt`;
+      `${safeFilename}-dataset-recommendations.txt`;
 
     document.body.appendChild(anchor);
     anchor.click();
@@ -150,25 +179,25 @@ function DatasetsPage() {
             : "Select an uploaded research paper."
         }
         action={
-          recommendations ? (
-            <div className="flex gap-2">
-              <Button
-                variant="glass"
-                onClick={copyRecommendations}
-              >
-                <Copy className="h-4 w-4" />
-                Copy
-              </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="glass"
+              onClick={copyRecommendations}
+              disabled={!recommendations || loading}
+            >
+              <Copy className="h-4 w-4" />
+              Copy
+            </Button>
 
-              <Button
-                variant="hero"
-                onClick={downloadRecommendations}
-              >
-                <Download className="h-4 w-4" />
-                Export
-              </Button>
-            </div>
-          ) : undefined
+            <Button
+              variant="hero"
+              onClick={downloadRecommendations}
+              disabled={!recommendations || loading}
+            >
+              <Download className="h-4 w-4" />
+              Export
+            </Button>
+          </div>
         }
       />
 
@@ -177,7 +206,10 @@ function DatasetsPage() {
           <select
             value={selectedPaper}
             onChange={(event) => {
-              setSelectedPaper(event.target.value);
+              setSelectedPaper(
+                event.target.value
+              );
+
               setRecommendations("");
               setError("");
             }}
@@ -186,20 +218,29 @@ function DatasetsPage() {
             }
             className="min-h-10 flex-1 rounded-xl border border-border/60 bg-secondary/40 px-3 py-2 text-sm"
           >
-            {papers.length === 0 && (
+            {loadingPapers && (
               <option value="">
-                No papers uploaded
+                Loading papers...
               </option>
             )}
 
-            {papers.map((paper, index) => (
-              <option
-                key={`${paper.filename}-${index}`}
-                value={paper.filename}
-              >
-                {paper.filename}
-              </option>
-            ))}
+            {!loadingPapers &&
+              papers.length === 0 && (
+                <option value="">
+                  No papers uploaded
+                </option>
+              )}
+
+            {papers.map(
+              (paper, index) => (
+                <option
+                  key={`${paper.filename}-${index}`}
+                  value={paper.filename}
+                >
+                  {paper.filename}
+                </option>
+              )
+            )}
           </select>
 
           <Button
@@ -239,7 +280,7 @@ function DatasetsPage() {
 
               <p className="mt-2 text-sm text-muted-foreground">
                 Find datasets aligned with the
-                selected paper's research domain.
+                selected paper&apos;s research domain.
               </p>
             </div>
 
@@ -251,8 +292,8 @@ function DatasetsPage() {
               </h3>
 
               <p className="mt-2 text-sm text-muted-foreground">
-                Use your specialized dataset agent
-                to recommend suitable resources.
+                Run the specialized Dataset Agent
+                on retrieved paper context.
               </p>
             </div>
 
@@ -280,8 +321,8 @@ function DatasetsPage() {
           </h3>
 
           <p className="mt-2 text-sm text-muted-foreground">
-            Matching research context with suitable
-            datasets...
+            Running the specialized Dataset Agent
+            on the selected research paper...
           </p>
         </div>
       )}
