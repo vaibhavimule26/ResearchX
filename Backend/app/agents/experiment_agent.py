@@ -1,27 +1,54 @@
 from app.llm.gemini import generate_answer
 
 
-def recommend_experiments(context):
+def recommend_experiments(context: str) -> str:
     """
-    Recommend experiments for the uploaded research paper.
+    Recommend research experiments for the uploaded paper.
     """
 
-    prompt = f"""
-You are an expert AI Research Assistant.
+    if not context or not context.strip():
+        return (
+            "Unable to recommend experiments because "
+            "no research paper context was provided."
+        )
 
-Analyze the following research paper and recommend experiments.
+    question = """
+Analyze the provided research paper as an expert research scientist.
 
-For each experiment provide:
+Generate a detailed Experiment Recommendation Report with exactly these sections:
 
-1. Experiment Name
-2. Objective
-3. Methodology
-4. Expected Outcome
-5. Evaluation Metrics
+1. Suggested Experiments
+- List the most important experiments to perform.
+- Explain why each experiment is useful.
 
-Research Paper:
+2. Experiment Setup
+- Experimental methodology
+- Required datasets
+- Models
+- Baselines
+- Training strategy
 
-{context}
+3. Evaluation Metrics
+- Appropriate evaluation metrics
+- Explain why each metric is suitable.
+
+4. Expected Outcomes
+- Expected observations
+- Possible improvements
+- Potential limitations
+
+5. Best Experiment Plan
+- Recommend the best complete experiment.
+- Explain how it should be implemented.
+
+Important Rules:
+- Base your answer only on the provided research paper context.
+- Do not invent results.
+- If information is missing, clearly state that.
+- Give a detailed structured answer.
 """
 
-    return generate_answer(prompt, "")
+    return generate_answer(
+        context=context,
+        question=question,
+    )

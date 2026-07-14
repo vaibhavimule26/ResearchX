@@ -27,7 +27,7 @@ const GROUPS: { label: string; items: { to: string; label: string; icon: any }[]
       { to: "/dashboard/gaps", label: "Gap Analysis", icon: Lightbulb },
       { to: "/dashboard/datasets", label: "Datasets", icon: Database },
       { to: "/dashboard/experiments", label: "Experiments", icon: FlaskConical },
-      { to: "/dashboard/survey", label: "Literature Survey", icon: BookOpen },
+      { to: "/dashboard/literature", label: "Literature Survey", icon: BookOpen },
     ],
   },
   {

@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 
 import {
   getPapers,
-  searchPaper,
+  generateIEEEReport,
 } from "@/lib/api";
 
 export const Route = createFileRoute("/dashboard/report")({
@@ -82,22 +82,19 @@ function ReportPage() {
       setError("");
       setReport("");
 
-      const response = await searchPaper(
-        "Generate a complete analysis and detailed analysis report for this research paper",
-        `report_${Date.now()}`,
-        selectedPaper
-      );
+      const response = await generateIEEEReport(
+  selectedPaper
+);
 
-      const answer =
-        response?.data?.answer;
+const result = response.result;
 
-      if (!answer) {
-        throw new Error(
-          "No research report received"
-        );
-      }
+if (!result) {
+  throw new Error(
+    "No IEEE report received"
+  );
+}
 
-      setReport(answer);
+setReport(result);
     } catch (error) {
       setError(
         error instanceof Error

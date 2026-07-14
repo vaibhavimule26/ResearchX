@@ -213,13 +213,14 @@ export async function getSessions() {
 // ==========================
 // Structured AI Analysis Types
 // ==========================
-export type AnalysisType =
+  export type AnalysisType =
   | "summary"
   | "gaps"
   | "datasets"
   | "experiments"
   | "literature"
-  | "novelty";
+  | "novelty"
+  | "report";
 
 export type AnalysisResponse = {
   success: boolean;
@@ -246,6 +247,32 @@ export async function runAnalysis(
       body: JSON.stringify({
         paper_name: paperName,
         analysis_type: analysisType,
+      }),
+    }
+  );
+
+  return handleResponse(response);
+}
+
+export type ReportResponse = {
+  success: boolean;
+  message: string;
+  paper_name: string;
+  result: string;
+};
+
+export async function generateIEEEReport(
+  paperName: string
+): Promise<ReportResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/report/generate`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        paper_name: paperName,
       }),
     }
   );

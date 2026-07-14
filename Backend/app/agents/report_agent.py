@@ -1,55 +1,176 @@
-def generate_final_report(
-    summary,
-    gaps,
-    datasets,
-    experiments,
-    literature,
-    novelty,
-):
+from app.llm.gemini import generate_answer
+
+
+def generate_final_report(context: str) -> str:
     """
-    Combine outputs from all agents into one report.
+    Generate a professional IEEE-style research paper
+    directly from the uploaded research paper.
     """
 
-    report = f"""
-# Research Paper Analysis Report
+    if not context or not context.strip():
+        return (
+            "No research paper context was provided."
+        )
 
-## 1. Summary
+    question = """
+You are an IEEE Research Paper Writing Expert.
 
-{summary}
+Analyze the uploaded research paper and generate a complete,
+professional IEEE-style research paper.
 
---------------------------------------------------
+Generate EXACTLY the following sections.
 
-## 2. Research Gaps
+==================================================
+Title
+==================================================
 
-{gaps}
+Use the paper title exactly as available.
 
---------------------------------------------------
+==================================================
+Authors
+==================================================
 
-## 3. Recommended Datasets
+If authors are unavailable write:
 
-{datasets}
+"Authors not available in the provided paper."
 
---------------------------------------------------
+==================================================
+Abstract
+==================================================
 
-## 4. Recommended Experiments
+Write a professional academic abstract.
 
-{experiments}
+==================================================
+Keywords
+==================================================
 
---------------------------------------------------
+Provide 4 to 6 keywords.
 
-## 5. Literature Survey
+==================================================
+I. Introduction
+==================================================
 
-{literature}
+Explain:
+- Background
+- Problem Statement
+- Motivation
+- Objectives
+- Research Questions (if available)
 
---------------------------------------------------
+==================================================
+II. Related Work
+==================================================
 
-## 6. Novelty Analysis
+Summarize previous work discussed in the paper.
 
-{novelty}
+==================================================
+III. Proposed Methodology
+==================================================
 
---------------------------------------------------
+Explain the proposed architecture,
+workflow and methodology.
 
-End of Report.
+==================================================
+IV. Dataset Description
+==================================================
+
+Include:
+
+- Dataset Name
+- Source
+- Data Type
+- Size (only if available)
+- Purpose
+
+If unavailable clearly mention it.
+
+==================================================
+V. Experimental Setup
+==================================================
+
+Include:
+
+- Baselines
+- Evaluation Metrics
+- Experimental Configuration
+- Hardware (if available)
+
+==================================================
+VI. Results and Discussion
+==================================================
+
+Explain:
+
+- Experimental Results
+- Performance
+- Analysis
+- Comparison
+- Important observations
+
+Preserve numerical values exactly.
+
+==================================================
+VII. Novel Contributions
+==================================================
+
+Clearly list the paper's original contributions.
+
+==================================================
+VIII. Limitations
+==================================================
+
+Explain all limitations discussed in the paper.
+
+==================================================
+IX. Future Work
+==================================================
+
+Explain future research directions.
+
+==================================================
+X. Conclusion
+==================================================
+
+Write a strong IEEE-style conclusion.
+
+==================================================
+References
+==================================================
+
+IMPORTANT
+
+If the uploaded paper already contains a References
+section, reproduce ONLY those references.
+
+Do NOT invent references.
+
+If some references are incomplete because they are
+missing from the provided context, write:
+
+"Reference details unavailable in the provided paper."
+
+==================================================
+STRICT RULES
+==================================================
+
+1. Use ONLY the uploaded paper.
+2. Never invent citations.
+3. Never invent references.
+4. Never invent datasets.
+5. Never invent numerical values.
+6. Never invent authors.
+7. Never invent institutions.
+8. Never invent experimental results.
+9. Clearly mention when information is unavailable.
+10. Write like a real IEEE conference paper.
+11. Use professional academic English.
+12. Keep the formatting clean.
+13. Produce a complete report.
+14. Do not stop midway.
+15. Preserve all technical details.
 """
 
-    return report
+    return generate_answer(
+        context=context,
+        question=question,
+    )

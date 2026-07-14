@@ -2,6 +2,7 @@ import os
 
 from dotenv import load_dotenv
 
+
 # ==========================================================
 # Load Environment Variables FIRST
 # ==========================================================
@@ -37,6 +38,7 @@ from app.api.routes import router
 from app.upload.upload import router as upload_router
 from app.search.search import router as search_router
 from app.api.analysis import router as analysis_router
+from app.api.report import router as report_router
 
 
 # ==========================================================
@@ -136,3 +138,8 @@ app.include_router(search_router)
 # Structured Analysis Routes
 # ==========================================================
 app.include_router(analysis_router)
+
+# ==========================================================
+# IEEE Report Routes
+# ==========================================================
+app.include_router(report_router)

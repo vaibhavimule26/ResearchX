@@ -11,6 +11,7 @@ from app.agents.dataset_agent import recommend_datasets
 from app.agents.experiment_agent import recommend_experiments
 from app.agents.literature_agent import generate_literature_survey
 from app.agents.novelty_agent import analyze_novelty
+from app.agents.report_agent import generate_final_report
 
 
 router = APIRouter(
@@ -37,6 +38,7 @@ AnalysisType = Literal[
     "experiments",
     "literature",
     "novelty",
+    "report",
 ]
 
 
@@ -91,6 +93,11 @@ ANALYSIS_QUERIES = {
     "novelty": (
         "novelty innovation original contribution "
         "unique method new approach contributions"
+    ),
+        "report": (
+        "complete research paper methodology results "
+        "datasets experiments literature contributions "
+        "limitations future work"
     ),
 }
 

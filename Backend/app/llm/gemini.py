@@ -23,7 +23,7 @@ genai.configure(
 # ==========================
 generation_config = genai.GenerationConfig(
     temperature=0.3,
-    max_output_tokens=4096,
+    max_output_tokens=8192,
 )
 
 
@@ -57,46 +57,43 @@ def generate_answer(
     prompt = f"""
 You are ResearchX, an AI Research Assistant.
 
-Your task is to analyze the provided research paper context
+Your task is to analyze the provided research paper
 and answer the user's question accurately.
 
-IMPORTANT RULES:
+IMPORTANT RULES
 
-1. Use ONLY information supported by the provided context.
-2. Do not invent facts, datasets, results, metrics, or citations.
-3. If information is missing, explicitly say that it is not
-   available in the provided context.
-4. Give a complete answer.
-5. Do not stop in the middle of a sentence.
-6. Use clear headings and structured formatting when useful.
-7. Preserve important numerical results and technical details.
-8. Distinguish clearly between:
-   - paper claims
-   - limitations
-   - inferred observations
-9. Avoid unnecessary repetition.
-10. For research summaries, provide enough detail to understand
-    the complete paper context.
+1. Use ONLY the provided paper.
+2. Never invent facts.
+3. Never invent datasets.
+4. Never invent numerical values.
+5. Never invent citations.
+6. If information is unavailable,
+   clearly state that.
+7. Write professionally.
+8. Never stop in the middle.
+9. Produce complete answers.
+10. Preserve technical details.
 
-RESEARCH PAPER CONTEXT:
+RESEARCH PAPER
 
 {context}
 
-USER QUESTION:
+QUESTION
 
 {question}
 
-Now provide a complete, accurate, well-structured answer.
+Provide a complete answer.
 """
 
     try:
+
         response = model.generate_content(
             prompt
         )
 
         if not response.candidates:
             return (
-                "Gemini returned no response candidates."
+                "Gemini returned no response."
             )
 
         text = response.text
@@ -112,3 +109,29 @@ Now provide a complete, accurate, well-structured answer.
         raise RuntimeError(
             f"Gemini generation failed: {str(error)}"
         ) from error
+
+
+# =====================================================
+# Generate Large Answer (Multiple Gemini Calls)
+# =====================================================
+def generate_large_answer(
+    context: str,
+    question_part1: str,
+    question_part2: str,
+) -> str:
+
+    part1 = generate_answer(
+        context=context,
+        question=question_part1,
+    )
+
+    part2 = generate_answer(
+        context=context,
+        question=question_part2,
+    )
+
+    return (
+        part1
+        + "\n\n"
+        + part2
+    )

@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 
 import {
   getPapers,
-  searchPaper,
+  runAnalysis,
 } from "@/lib/api";
 
 export const Route = createFileRoute("/dashboard/experiments")({
@@ -81,22 +81,20 @@ function ExperimentsPage() {
       setError("");
       setRecommendations("");
 
-      const response = await searchPaper(
-        "Recommend experiments for this research paper. Include experiment setup, baselines, methodology, evaluation metrics, implementation strategy, expected results, hardware requirements, and possible ablation studies.",
-        `experiment_${Date.now()}`,
-        selectedPaper
-      );
+      const response = await runAnalysis(
+  selectedPaper,
+  "experiments"
+);
 
-      const answer =
-        response?.data?.answer;
+const result = response?.result;
 
-      if (!answer) {
-        throw new Error(
-          "No experiment recommendations received"
-        );
-      }
+if (!result) {
+  throw new Error(
+    "No experiment recommendations received from backend"
+  );
+}
 
-      setRecommendations(answer);
+setRecommendations(result);
     } catch (error) {
       setError(
         error instanceof Error

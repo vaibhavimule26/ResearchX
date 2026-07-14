@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 
 import {
   getPapers,
-  searchPaper,
+  runAnalysis,
 } from "@/lib/api";
 
 export const Route = createFileRoute("/dashboard/literature")({
@@ -81,22 +81,20 @@ function LiteraturePage() {
       setError("");
       setSurvey("");
 
-      const response = await searchPaper(
-        "Generate a detailed literature survey for this research paper. Include research background, related work, major approaches, datasets used, methodologies, key findings, limitations, comparative discussion, research gaps, and future research directions.",
-        `literature_${Date.now()}`,
-        selectedPaper
-      );
+      const response = await runAnalysis(
+  selectedPaper,
+  "literature"
+);
 
-      const answer =
-        response?.data?.answer;
+const result = response?.result;
 
-      if (!answer) {
-        throw new Error(
-          "No literature survey received"
-        );
-      }
+if (!result) {
+  throw new Error(
+    "No literature survey received from backend"
+  );
+}
 
-      setSurvey(answer);
+setSurvey(result);
     } catch (error) {
       setError(
         error instanceof Error
