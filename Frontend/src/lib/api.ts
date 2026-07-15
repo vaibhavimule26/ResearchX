@@ -220,7 +220,8 @@ export async function getSessions() {
   | "experiments"
   | "literature"
   | "novelty"
-  | "report";
+  | "report"
+  | "ppt";
 
 export type AnalysisResponse = {
   success: boolean;

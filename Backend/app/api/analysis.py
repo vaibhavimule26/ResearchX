@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from sentence_transformers import SentenceTransformer
 
 from app.database.chroma import collection
+
 from app.agents.summarizer import summarize_paper
 from app.agents.research_gap import find_research_gaps
 from app.agents.dataset_agent import recommend_datasets
@@ -12,6 +13,7 @@ from app.agents.experiment_agent import recommend_experiments
 from app.agents.literature_agent import generate_literature_survey
 from app.agents.novelty_agent import analyze_novelty
 from app.agents.report_agent import generate_final_report
+from app.agents.ppt_agent import generate_presentation
 
 
 router = APIRouter(
@@ -39,6 +41,7 @@ AnalysisType = Literal[
     "literature",
     "novelty",
     "report",
+    "ppt",
 ]
 
 
@@ -94,10 +97,15 @@ ANALYSIS_QUERIES = {
         "novelty innovation original contribution "
         "unique method new approach contributions"
     ),
-        "report": (
+    "report": (
         "complete research paper methodology results "
         "datasets experiments literature contributions "
         "limitations future work"
+    ),
+    "ppt": (
+        "complete research paper abstract methodology "
+        "results datasets experiments conclusion "
+        "contributions"
     ),
 }
 
@@ -112,6 +120,8 @@ ANALYSIS_HANDLERS = {
     "experiments": recommend_experiments,
     "literature": generate_literature_survey,
     "novelty": analyze_novelty,
+    "report": generate_final_report,
+    "ppt": generate_presentation,
 }
 
 
@@ -126,23 +136,15 @@ def run_analysis(
     request: AnalysisRequest,
 ):
     try:
-        # --------------------------------------------------
-        # Build retrieval query for selected analysis type
-        # --------------------------------------------------
+
         retrieval_query = ANALYSIS_QUERIES[
             request.analysis_type
         ]
 
-        # --------------------------------------------------
-        # Generate query embedding
-        # --------------------------------------------------
         query_embedding = model.encode(
             retrieval_query
         ).tolist()
 
-        # --------------------------------------------------
-        # Retrieve relevant chunks only from selected paper
-        # --------------------------------------------------
         results = collection.query(
             query_embeddings=[
                 query_embedding
@@ -153,58 +155,37 @@ def run_analysis(
             },
         )
 
-        documents = (
-            results.get("documents", [[]])[0]
-        )
+        documents = results.get(
+            "documents",
+            [[]],
+        )[0]
 
-        # --------------------------------------------------
-        # Validate retrieved context
-        # --------------------------------------------------
         if not documents:
             raise HTTPException(
                 status_code=404,
                 detail=(
-                    "No indexed content found for "
+                    f"No indexed content found for "
                     f"'{request.paper_name}'"
                 ),
             )
 
-        # --------------------------------------------------
-        # Build real research paper context
-        # --------------------------------------------------
         context = "\n\n".join(documents)
 
-        # --------------------------------------------------
-        # Select specialized AI agent
-        # --------------------------------------------------
         handler = ANALYSIS_HANDLERS[
             request.analysis_type
         ]
 
-        # --------------------------------------------------
-        # Run specialized agent
-        # --------------------------------------------------
         result = handler(context)
 
-        # --------------------------------------------------
-        # Validate AI result
-        # --------------------------------------------------
         if not result:
             raise HTTPException(
                 status_code=500,
-                detail=(
-                    "Analysis returned an empty result"
-                ),
+                detail="Analysis returned an empty result",
             )
 
-        # --------------------------------------------------
-        # Return structured response
-        # --------------------------------------------------
         return AnalysisResponse(
             success=True,
-            message=(
-                "Analysis completed successfully"
-            ),
+            message="Analysis completed successfully",
             paper_name=request.paper_name,
             analysis_type=request.analysis_type,
             result=result,

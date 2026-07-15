@@ -2,7 +2,6 @@ import os
 
 from dotenv import load_dotenv
 
-
 # ==========================================================
 # Load Environment Variables FIRST
 # ==========================================================
@@ -20,14 +19,12 @@ load_dotenv(
     override=True,
 )
 
-
 # ==========================================================
 # FastAPI Imports
 # ==========================================================
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-
 
 # ==========================================================
 # Application Imports
@@ -39,7 +36,7 @@ from app.upload.upload import router as upload_router
 from app.search.search import router as search_router
 from app.api.analysis import router as analysis_router
 from app.api.report import router as report_router
-
+from app.api.ppt import router as ppt_router
 
 # ==========================================================
 # Create FastAPI Application
@@ -48,7 +45,6 @@ app = FastAPI(
     title="ResearchX API",
     version="1.0.0",
 )
-
 
 # ==========================================================
 # CORS Configuration
@@ -65,7 +61,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 # ==========================================================
 # Global Error Handler
@@ -88,7 +83,6 @@ async def global_exception_handler(
         },
     )
 
-
 # ==========================================================
 # Root Route
 # ==========================================================
@@ -102,7 +96,6 @@ def root():
         },
     )
 
-
 # ==========================================================
 # Health Check
 # ==========================================================
@@ -115,24 +108,20 @@ def health():
         },
     )
 
-
 # ==========================================================
 # Authentication Routes
 # ==========================================================
 app.include_router(router)
-
 
 # ==========================================================
 # Upload Routes
 # ==========================================================
 app.include_router(upload_router)
 
-
 # ==========================================================
 # Search Routes
 # ==========================================================
 app.include_router(search_router)
-
 
 # ==========================================================
 # Structured Analysis Routes
@@ -143,3 +132,8 @@ app.include_router(analysis_router)
 # IEEE Report Routes
 # ==========================================================
 app.include_router(report_router)
+
+# ==========================================================
+# PPT Generator Routes
+# ==========================================================
+app.include_router(ppt_router)
