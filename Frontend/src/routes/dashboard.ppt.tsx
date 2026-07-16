@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 
 import {
   getPapers,
-  runAnalysis,
+  generatePresentation as generatePresentationAPI,
 } from "@/lib/api";
 
 export const Route = createFileRoute("/dashboard/ppt")({
@@ -70,34 +70,41 @@ function PPTPage() {
     loadPapers();
   }, []);
 
-  const generatePresentation =
-    async () => {
-      if (!selectedPaper) return;
+  const generatePresentation = async () => {
 
-      try {
-        setLoading(true);
-        setError("");
-        setPresentation("");
+  if (!selectedPaper) return;
 
-        const response =
-          await runAnalysis(
-            selectedPaper,
-            "ppt"
-          );
+  try {
 
-        setPresentation(
-          response.result
-        );
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Generation failed"
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
+    setLoading(true);
+
+    setError("");
+
+    setPresentation("");
+
+    const response =
+  await generatePresentationAPI(
+    selectedPaper
+  );
+
+    setPresentation(
+      response.presentation
+    );
+
+  } catch (err) {
+
+    setError(
+      err instanceof Error
+        ? err.message
+        : "Generation failed"
+    );
+
+  } finally {
+
+    setLoading(false);
+
+  }
+};
       return (
     <div>
       <PageHeader

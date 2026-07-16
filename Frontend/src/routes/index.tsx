@@ -1,7 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { motion, useInView } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
-import { checkBackend } from "@/lib/api";
 import {
   Search, FileText, Sparkles, Lightbulb, Database, FlaskConical,
   BookOpen, FileSpreadsheet, Presentation, Network, GitBranch, Workflow as WorkflowIcon,
@@ -17,11 +16,11 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "ResearchX — Your Complete AI Research Operating System" },
+      { title: "ResearchX —AI Multi-Agent Research Assistant" },
       {
         name: "description",
         content:
-          "ResearchX is a multi-agent AI platform automating paper discovery, PDF analysis, gap detection, experiment planning, IEEE report generation and presentation creation.",
+          "Upload research papers, analyze them using specialized AI agents, discover research gaps, generate IEEE reports, and create professional presentations—all from one intelligent platform",
       },
       { property: "og:title", content: "ResearchX — AI Research OS" },
       {
@@ -34,18 +33,11 @@ export const Route = createFileRoute("/")({
 });
 
 function LandingPage() {
-  const [backendStatus, setBackendStatus] = useState("Checking...");
-
-  useEffect(() => {
-    checkBackend()
-      .then((data) => setBackendStatus(data.status))
-      .catch(() => setBackendStatus("Offline"));
-  }, []);
+  
   return (
-    <div className="relative min-h-screen overflow-x-hidden">
-      <div className="fixed top-20 right-6 z-50 rounded-lg bg-green-600 px-4 py-2 text-white font-semibold shadow-lg">
-  Backend: {backendStatus}
-</div>
+  <div className="relative min-h-screen overflow-x-hidden">
+    <Navbar />
+      
       <Hero />
       <Stats />
       <Features />
@@ -80,28 +72,56 @@ function Hero() {
             <span className="text-muted-foreground">Powered by 10 specialized AI agents</span>
           </div>
           <h1 className="mt-6 font-display text-5xl font-bold leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl">
-            Your Complete <br />
-            <span className="gradient-text">AI Research</span> <br />
-            Operating System
+            AI Multi-Agent <br />
+<span className="gradient-text">
+Research Assistant
+</span>
           </h1>
           <p className="mt-6 max-w-xl text-lg text-muted-foreground">
             ResearchX automates the complete research workflow — from paper discovery and
             PDF analysis to gap detection, experiment planning, IEEE report generation
             and presentation creation. One platform. Ten agents. Endless research.
           </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Button asChild variant="hero" size="lg">
-              <Link to="/dashboard/workspace">
-                Start Research <ArrowRight className="h-4 w-4" />
-              </Link>
-            </Button>
-            <Button variant="glass" size="lg">
-              <Play className="h-4 w-4" /> Watch Demo
-            </Button>
-            <Button variant="ghost" size="lg">
-              <Calendar className="h-4 w-4" /> Book Demo
-            </Button>
-          </div>
+          <div className="mt-6 flex flex-wrap gap-3">
+  <span className="rounded-full border border-border/60 px-4 py-2 text-sm">
+    ✓ 10 AI Agents
+  </span>
+
+  <span className="rounded-full border border-border/60 px-4 py-2 text-sm">
+    ✓ RAG Powered
+  </span>
+
+  <span className="rounded-full border border-border/60 px-4 py-2 text-sm">
+    ✓ IEEE Reports
+  </span>
+
+  <span className="rounded-full border border-border/60 px-4 py-2 text-sm">
+    ✓ PPT Generator
+  </span>
+</div>
+          <div className="mt-6 flex flex-wrap gap-3">
+  <Button asChild variant="hero" size="lg">
+    <Link to="/register">
+      Get Started Free
+    </Link>
+  </Button>
+
+  <Button asChild variant="outline" size="lg">
+    <a href="#features">
+      Learn More
+    </a>
+  </Button>
+
+  <Button variant="glass" size="lg">
+    <Play className="h-4 w-4" />
+    Watch Demo
+  </Button>
+
+  <Button variant="ghost" size="lg">
+    <Calendar className="h-4 w-4" />
+    Book Demo
+  </Button>
+</div>
           <div className="mt-10 flex items-center gap-6 text-xs text-muted-foreground">
             <div>
               <div className="flex">
@@ -112,7 +132,7 @@ function Hero() {
               <p className="mt-1">4.9 / 5 from 1,200+ researchers</p>
             </div>
             <div className="h-8 w-px bg-border" />
-            <p>Trusted by labs at MIT, Stanford, IIT, ETH Zürich</p>
+            Built for students, researchers and academic professionals.
           </div>
         </motion.div>
 
@@ -573,7 +593,9 @@ function CTA() {
                 <Link to="/register">Get Started Free <ArrowRight className="h-4 w-4" /></Link>
               </Button>
               <Button asChild variant="glass" size="lg">
-                <Link to="/dashboard">Explore Workspace</Link>
+                <Link to="/login">
+  Login
+</Link>
               </Button>
             </div>
           </div>

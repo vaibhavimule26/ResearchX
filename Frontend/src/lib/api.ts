@@ -280,3 +280,32 @@ export async function generateIEEEReport(
 
   return handleResponse(response);
 }
+
+// ==========================
+// Generate Presentation
+// ==========================
+
+export type PresentationResponse = {
+  success: boolean;
+  presentation: string;
+};
+
+export async function generatePresentation(
+  paperName: string
+): Promise<PresentationResponse> {
+
+  const response = await fetch(
+    `${API_BASE_URL}/presentation/generate`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        paper_name: paperName,
+      }),
+    }
+  );
+
+  return handleResponse(response);
+}

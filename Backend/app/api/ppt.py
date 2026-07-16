@@ -32,6 +32,9 @@ def generate_ppt(
 
     try:
 
+        # ----------------------------------------
+        # Retrieve Paper Context
+        # ----------------------------------------
         query = (
             "complete research paper "
             "abstract methodology "
@@ -64,10 +67,56 @@ def generate_ppt(
 
         context = "\n\n".join(docs)
 
-        presentation = generate_presentation(
-            context
+        # ----------------------------------------
+        # Cache Directory
+        # ----------------------------------------
+        cache_dir = os.path.join(
+            tempfile.gettempdir(),
+            "researchx_cache",
         )
 
+        os.makedirs(
+            cache_dir,
+            exist_ok=True,
+        )
+
+        cache_file = os.path.join(
+            cache_dir,
+            f"{request.paper_name}.txt",
+        )
+
+        # ----------------------------------------
+        # Load Cached Presentation
+        # ----------------------------------------
+        if os.path.exists(cache_file):
+
+            with open(
+                cache_file,
+                "r",
+                encoding="utf-8",
+            ) as f:
+
+                presentation = f.read()
+
+        else:
+
+            presentation = generate_presentation(
+                context
+            )
+
+            with open(
+                cache_file,
+                "w",
+                encoding="utf-8",
+            ) as f:
+
+                f.write(
+                    presentation
+                )
+
+        # ----------------------------------------
+        # Generate PPTX
+        # ----------------------------------------
         output_file = os.path.join(
             tempfile.gettempdir(),
             "ResearchX_Presentation.pptx",
@@ -78,6 +127,9 @@ def generate_ppt(
             output_file,
         )
 
+        # ----------------------------------------
+        # Return PPT
+        # ----------------------------------------
         return FileResponse(
             output_file,
             filename="ResearchX_Presentation.pptx",
@@ -85,6 +137,7 @@ def generate_ppt(
         )
 
     except Exception as e:
+
         raise HTTPException(
             status_code=500,
             detail=str(e),
