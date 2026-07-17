@@ -15,7 +15,9 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as FeaturesRouteImport } from './routes/features'
 import { Route as DocsRouteImport } from './routes/docs'
+import { Route as DemoRouteImport } from './routes/demo'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as BookDemoRouteImport } from './routes/book-demo'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DashboardIndexRouteImport } from './routes/dashboard.index'
@@ -67,9 +69,19 @@ const DocsRoute = DocsRouteImport.update({
   path: '/docs',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DemoRoute = DemoRouteImport.update({
+  id: '/demo',
+  path: '/demo',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BookDemoRoute = BookDemoRouteImport.update({
+  id: '/book-demo',
+  path: '/book-demo',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AboutRoute = AboutRouteImport.update({
@@ -176,7 +188,9 @@ const DashboardChatRoute = DashboardChatRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/book-demo': typeof BookDemoRoute
   '/dashboard': typeof DashboardRouteWithChildren
+  '/demo': typeof DemoRoute
   '/docs': typeof DocsRoute
   '/features': typeof FeaturesRoute
   '/forgot-password': typeof ForgotPasswordRoute
@@ -205,6 +219,8 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/book-demo': typeof BookDemoRoute
+  '/demo': typeof DemoRoute
   '/docs': typeof DocsRoute
   '/features': typeof FeaturesRoute
   '/forgot-password': typeof ForgotPasswordRoute
@@ -234,7 +250,9 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/book-demo': typeof BookDemoRoute
   '/dashboard': typeof DashboardRouteWithChildren
+  '/demo': typeof DemoRoute
   '/docs': typeof DocsRoute
   '/features': typeof FeaturesRoute
   '/forgot-password': typeof ForgotPasswordRoute
@@ -265,7 +283,9 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/about'
+    | '/book-demo'
     | '/dashboard'
+    | '/demo'
     | '/docs'
     | '/features'
     | '/forgot-password'
@@ -294,6 +314,8 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/about'
+    | '/book-demo'
+    | '/demo'
     | '/docs'
     | '/features'
     | '/forgot-password'
@@ -322,7 +344,9 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/about'
+    | '/book-demo'
     | '/dashboard'
+    | '/demo'
     | '/docs'
     | '/features'
     | '/forgot-password'
@@ -352,7 +376,9 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  BookDemoRoute: typeof BookDemoRoute
   DashboardRoute: typeof DashboardRouteWithChildren
+  DemoRoute: typeof DemoRoute
   DocsRoute: typeof DocsRoute
   FeaturesRoute: typeof FeaturesRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
@@ -405,11 +431,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DocsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/demo': {
+      id: '/demo'
+      path: '/demo'
+      fullPath: '/demo'
+      preLoaderRoute: typeof DemoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard': {
       id: '/dashboard'
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/book-demo': {
+      id: '/book-demo'
+      path: '/book-demo'
+      fullPath: '/book-demo'
+      preLoaderRoute: typeof BookDemoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/about': {
@@ -604,7 +644,9 @@ const DashboardRouteWithChildren = DashboardRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  BookDemoRoute: BookDemoRoute,
   DashboardRoute: DashboardRouteWithChildren,
+  DemoRoute: DemoRoute,
   DocsRoute: DocsRoute,
   FeaturesRoute: FeaturesRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,

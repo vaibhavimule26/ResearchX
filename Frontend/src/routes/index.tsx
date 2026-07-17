@@ -35,7 +35,7 @@ export const Route = createFileRoute("/")({
 function LandingPage() {
   
   return (
-  <div className="relative min-h-screen overflow-x-hidden">
+  <div className="relative min-h-screen overflow-x-hidden bg-background scroll-smooth">
     <Navbar />
       
       <Hero />
@@ -55,15 +55,18 @@ function LandingPage() {
 /* ---------------- HERO ---------------- */
 function Hero() {
   return (
-    <section className="relative isolate overflow-hidden pt-32 pb-24 sm:pt-40">
+    <section className="relative isolate overflow-hidden pt-28 pb-24 sm:pt-36 lg:pt-40">
       <AnimatedBackground />
       <FloatingParticles />
-      <div className="mx-auto grid max-w-7xl gap-16 px-4 sm:px-6 lg:grid-cols-2 lg:items-center lg:px-8">
+      <div className="mx-auto grid max-w-7xl items-center gap-14 px-4 sm:px-6 lg:grid-cols-2 lg:gap-20 lg:px-8">
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7 }}
-        >
+  initial={{ opacity: 0, y: 40 }}
+  animate={{ opacity: 1, y: 0 }}
+  transition={{
+    duration: 0.8,
+    ease: "easeOut",
+  }}
+>
           <div className="inline-flex items-center gap-2 rounded-full glass px-3 py-1.5 text-xs">
             <span className="flex h-2 w-2">
               <span className="absolute h-2 w-2 animate-ping rounded-full bg-[var(--electric)]/60" />
@@ -112,15 +115,19 @@ Research Assistant
     </a>
   </Button>
 
-  <Button variant="glass" size="lg">
-    <Play className="h-4 w-4" />
+ <Button asChild variant="glass" size="lg">
+  <Link to="/demo">
+    <Play className="mr-2 h-4 w-4" />
     Watch Demo
-  </Button>
+  </Link>
+</Button>
 
-  <Button variant="ghost" size="lg">
-    <Calendar className="h-4 w-4" />
+<Button asChild variant="ghost" size="lg">
+  <Link to="/book-demo">
+    <Calendar className="mr-2 h-4 w-4" />
     Book Demo
-  </Button>
+  </Link>
+</Button>
 </div>
           <div className="mt-10 flex items-center gap-6 text-xs text-muted-foreground">
             <div>
@@ -197,8 +204,18 @@ function HeroVisual() {
         transition={{ duration: 8, repeat: Infinity }}
       >
         <div className="text-[10px] uppercase tracking-wide text-[var(--electric)]">Paper</div>
-        <div className="mt-1 text-xs font-medium">Attention Is All You Need</div>
-        <div className="mt-1 text-[10px] text-muted-foreground">Vaswani et al. · 2017</div>
+        <div className="mt-1 text-sm font-semibold">
+    Attention Is All You Need
+</div>
+
+<div className="mt-1 text-[11px] text-muted-foreground">
+    Vaswani et al. • NeurIPS 2017
+</div>
+
+<div className="mt-3 flex items-center justify-between text-[11px]">
+    <span>Citations</span>
+    <span className="font-semibold">132K+</span>
+</div>
       </motion.div>
       <motion.div
         className="absolute -right-2 bottom-12 w-48 rounded-2xl glass p-3"
@@ -231,17 +248,23 @@ function Counter({ to, suffix = "" }: { to: number; suffix?: string }) {
   const [val, setVal] = useState(0);
   const ref = useRef<HTMLSpanElement>(null);
   const inView = useInView(ref, { once: true, margin: "-50px" });
+
   useEffect(() => {
     if (!inView) return;
+
     const start = performance.now();
-    const dur = 1600;
-    const tick = (t: number) => {
-      const p = Math.min(1, (t - start) / dur);
-      setVal(Math.floor(p * to));
-      if (p < 1) requestAnimationFrame(tick);
+    const duration = 1600;
+
+    const tick = (time: number) => {
+      const progress = Math.min(1, (time - start) / duration);
+      setVal(Math.floor(progress * to));
+
+      if (progress < 1) requestAnimationFrame(tick);
     };
+
     requestAnimationFrame(tick);
   }, [inView, to]);
+
   return (
     <span ref={ref}>
       {val.toLocaleString()}
@@ -258,17 +281,38 @@ function Stats() {
     { value: 5_000, suffix: "+", label: "Reports Generated" },
     { value: 1_000, suffix: "+", label: "Active Users" },
   ];
+
   return (
-    <section className="relative py-20">
+    <section className="relative py-24">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="grid gap-6 rounded-3xl glass-strong p-8 sm:grid-cols-2 lg:grid-cols-5">
-          {items.map((it) => (
-            <div key={it.label} className="text-center">
-              <div className="font-display text-3xl font-bold gradient-text sm:text-4xl">
-                <Counter to={it.value} suffix={it.suffix} />
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-5">
+          {items.map((it, index) => (
+            <motion.div
+              key={it.label}
+              initial={{ opacity: 0, y: 25 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{
+                duration: 0.45,
+                delay: index * 0.08,
+              }}
+              whileHover={{
+                y: -6,
+                scale: 1.03,
+              }}
+              className="glass-strong rounded-3xl border border-white/10 p-8 text-center shadow-xl transition-all"
+            >
+              <div className="font-display text-4xl font-bold gradient-text">
+                <Counter
+                  to={it.value}
+                  suffix={it.suffix}
+                />
               </div>
-              <div className="mt-1 text-sm text-muted-foreground">{it.label}</div>
-            </div>
+
+              <div className="mt-3 text-sm font-medium text-muted-foreground">
+                {it.label}
+              </div>
+            </motion.div>
           ))}
         </div>
       </div>
@@ -276,7 +320,7 @@ function Stats() {
   );
 }
 
-/* ---------------- FEATURES ---------------- */
+//* ---------------- FEATURES ---------------- */
 const FEATURES = [
   { icon: Search, title: "Paper Retrieval", desc: "Semantic search across 5M+ papers from arXiv, IEEE, ACM, Springer." },
   { icon: FileText, title: "PDF Analysis", desc: "Multi-page parsing, chunking, citation extraction and OCR." },
@@ -304,26 +348,56 @@ function Features() {
           title="Everything your research needs"
           subtitle="15+ integrated capabilities — one cohesive AI research operating system."
         />
-        <div className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+
+        <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {FEATURES.map((f, i) => (
             <motion.div
               key={f.title}
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 25 }}
               whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-50px" }}
-              transition={{ duration: 0.4, delay: (i % 3) * 0.08 }}
-              whileHover={{ y: -4 }}
-              className="group relative overflow-hidden rounded-2xl glass p-6 transition-all hover:border-[oklch(0.62_0.23_295_/_0.4)]"
+              viewport={{ once: true }}
+              transition={{
+                duration: 0.45,
+                delay: (i % 3) * 0.08,
+              }}
+              whileHover={{
+                y: -8,
+                scale: 1.03,
+              }}
+              className="group relative overflow-hidden rounded-3xl border border-white/10 glass-strong p-7 shadow-xl transition-all"
             >
-              <div className="pointer-events-none absolute inset-0 opacity-0 transition-opacity group-hover:opacity-100"
-                style={{ background: "radial-gradient(400px circle at var(--x,50%) var(--y,0%), oklch(0.62 0.23 295 / 0.15), transparent 60%)" }}
+              <div
+                className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+                style={{
+                  background:
+                    "radial-gradient(circle at top right, rgba(99,102,241,.18), transparent 60%)",
+                }}
               />
-              <div className="relative">
-                <div className="grid h-11 w-11 place-items-center rounded-xl gradient-primary-bg">
-                  <f.icon className="h-5 w-5 text-primary-foreground" />
+
+              <div className="relative z-10">
+                <motion.div
+                  whileHover={{
+                    rotate: 8,
+                    scale: 1.1,
+                  }}
+                  transition={{ duration: 0.2 }}
+                  className="grid h-14 w-14 place-items-center rounded-2xl gradient-primary-bg shadow-lg"
+                >
+                  <f.icon className="h-7 w-7 text-primary-foreground" />
+                </motion.div>
+
+                <h3 className="mt-5 text-lg font-semibold">
+                  {f.title}
+                </h3>
+
+                <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                  {f.desc}
+                </p>
+
+                <div className="mt-6 flex items-center text-sm font-medium text-[var(--electric)] opacity-0 transition-all duration-300 group-hover:opacity-100">
+                  Learn More
+                  <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
                 </div>
-                <h3 className="mt-4 font-semibold">{f.title}</h3>
-                <p className="mt-2 text-sm text-muted-foreground">{f.desc}</p>
               </div>
             </motion.div>
           ))}
@@ -354,39 +428,93 @@ function Workflow() {
         <SectionHeader
           eyebrow="How it works"
           title="An orchestrated multi-agent pipeline"
-          subtitle="Every request flows through specialized agents — coordinated, traceable, parallel."
+          subtitle="Every request flows through specialized agents — coordinated, traceable and parallel."
         />
-        <div className="relative mt-14">
-          <div className="grid gap-5 lg:grid-cols-5">
+
+        <div className="relative mt-16">
+
+          <div className="absolute left-0 right-0 top-12 hidden h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent lg:block" />
+
+          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-5">
             {WORKFLOW.map((a, i) => (
               <motion.div
                 key={a.name}
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 30 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "-50px" }}
-                transition={{ duration: 0.35, delay: i * 0.05 }}
-                whileHover={{ y: -4, scale: 1.02 }}
-                className="group relative rounded-2xl glass p-5"
+                viewport={{ once: true }}
+                transition={{
+                  duration: 0.45,
+                  delay: i * 0.07,
+                }}
+                whileHover={{
+                  y: -8,
+                  scale: 1.03,
+                }}
+                className="group relative overflow-hidden rounded-3xl border border-white/10 glass-strong p-6 shadow-xl"
               >
-                <div className="flex items-center gap-3">
-                  <div className="grid h-10 w-10 place-items-center rounded-xl gradient-primary-bg">
-                    <a.icon className="h-5 w-5 text-primary-foreground" />
+                <div
+                  className="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+                  style={{
+                    background:
+                      "radial-gradient(circle at top right, rgba(99,102,241,.18), transparent 65%)",
+                  }}
+                />
+
+                <div className="relative z-10">
+
+                  <div className="flex items-center justify-between">
+                    <motion.div
+                      whileHover={{
+                        rotate: 8,
+                        scale: 1.1,
+                      }}
+                      transition={{ duration: 0.2 }}
+                      className="grid h-14 w-14 place-items-center rounded-2xl gradient-primary-bg shadow-lg"
+                    >
+                      <a.icon className="h-7 w-7 text-primary-foreground" />
+                    </motion.div>
+
+                    <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-muted-foreground">
+                      Step {i + 1}
+                    </span>
                   </div>
-                  <span className="text-xs text-muted-foreground">Step {i + 1}</span>
+
+                  <h3 className="mt-5 text-base font-semibold">
+                    {a.name}
+                  </h3>
+
+                  <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                    {a.desc}
+                  </p>
+
+                  <div className="mt-5 flex items-center text-sm font-medium text-[var(--electric)] opacity-0 transition-all duration-300 group-hover:opacity-100">
+                    Active Agent
+                    <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
+                  </div>
+
                 </div>
-                <h3 className="mt-3 text-sm font-semibold">{a.name}</h3>
-                <p className="mt-1 text-xs text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100">
-                  {a.desc}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground group-hover:hidden">{a.desc.slice(0, 40)}…</p>
               </motion.div>
             ))}
           </div>
-          <div className="mt-8 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-            <span>User input</span>
-            <ArrowRight className="h-4 w-4" />
-            <span className="gradient-text font-medium">Final Research Package</span>
+
+          <div className="mt-14 flex flex-wrap items-center justify-center gap-3 text-sm">
+            <span className="rounded-full glass px-4 py-2">
+              User Query
+            </span>
+
+            <ArrowRight className="h-4 w-4 text-primary" />
+
+            <span className="rounded-full glass px-4 py-2">
+              AI Multi-Agent Pipeline
+            </span>
+
+            <ArrowRight className="h-4 w-4 text-primary" />
+
+            <span className="rounded-full gradient-primary-bg px-5 py-2 font-semibold text-primary-foreground shadow-lg">
+              Final Research Package
+            </span>
           </div>
+
         </div>
       </div>
     </section>
@@ -400,30 +528,91 @@ function AgentShowcase() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <SectionHeader
           eyebrow="Meet the Agents"
-          title="10 specialized AI researchers"
-          subtitle="Each agent owns a focused responsibility. Together, they ship complete research."
+          title="10 Specialized AI Research Agents"
+          subtitle="Each agent performs a dedicated task. Together they create a complete research workflow."
         />
-        <div className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+
+        <div className="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {WORKFLOW.map((a, i) => (
             <motion.div
               key={a.name}
-              initial={{ opacity: 0, scale: 0.95 }}
-              whileInView={{ opacity: 1, scale: 1 }}
+              initial={{ opacity: 0, y: 25 }}
+              whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              transition={{ duration: 0.35, delay: i * 0.04 }}
-              className="rounded-2xl glass p-5"
+              transition={{
+                duration: 0.45,
+                delay: i * 0.05,
+              }}
+              whileHover={{
+                y: -8,
+                scale: 1.03,
+              }}
+              className="group relative overflow-hidden rounded-3xl border border-white/10 glass-strong p-6 shadow-xl"
             >
-              <div className="flex items-start justify-between">
-                <div className="grid h-12 w-12 place-items-center rounded-2xl gradient-primary-bg">
-                  <a.icon className="h-6 w-6 text-primary-foreground" />
+              <div
+                className="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+                style={{
+                  background:
+                    "radial-gradient(circle at top right, rgba(99,102,241,.18), transparent 65%)",
+                }}
+              />
+
+              <div className="relative z-10">
+
+                <div className="flex items-start justify-between">
+
+                  <motion.div
+                    whileHover={{
+                      rotate: 8,
+                      scale: 1.1,
+                    }}
+                    transition={{ duration: 0.2 }}
+                    className="grid h-14 w-14 place-items-center rounded-2xl gradient-primary-bg shadow-lg"
+                  >
+                    <a.icon className="h-7 w-7 text-primary-foreground" />
+                  </motion.div>
+
+                  <span className="inline-flex items-center gap-2 rounded-full bg-[var(--success)]/15 px-3 py-1 text-[11px] font-medium text-[var(--success)]">
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-[var(--success)]" />
+                    Online
+                  </span>
+
                 </div>
-                <span className="inline-flex items-center gap-1 rounded-full bg-[var(--success)]/15 px-2 py-0.5 text-[10px] text-[var(--success)]">
-                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--success)]" />
-                  Online
-                </span>
+
+                <h3 className="mt-5 text-base font-semibold">
+                  {a.name}
+                </h3>
+
+                <p className="mt-3 text-sm leading-6 text-muted-foreground">
+                  {a.desc}
+                </p>
+
+                <div className="mt-6 border-t border-white/10 pt-4">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">
+                      Status
+                    </span>
+
+                    <span className="font-medium text-[var(--electric)]">
+                      Ready
+                    </span>
+                  </div>
+
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
+                    <motion.div
+                      initial={{ width: 0 }}
+                      whileInView={{ width: "100%" }}
+                      viewport={{ once: true }}
+                      transition={{
+                        duration: 1.2,
+                        delay: i * 0.08,
+                      }}
+                      className="h-full rounded-full gradient-primary-bg"
+                    />
+                  </div>
+                </div>
+
               </div>
-              <h3 className="mt-4 text-sm font-semibold">{a.name}</h3>
-              <p className="mt-1 text-xs text-muted-foreground">{a.desc}</p>
             </motion.div>
           ))}
         </div>
@@ -431,7 +620,6 @@ function AgentShowcase() {
     </section>
   );
 }
-
 /* ---------------- COMPARISON ---------------- */
 function Comparison() {
   const rows = [
@@ -494,41 +682,115 @@ function Comparison() {
 /* ---------------- TESTIMONIALS ---------------- */
 function Testimonials() {
   const items = [
-    { name: "Dr. Aarav Mehta", role: "PhD, ML — IIT Bombay", quote: "ResearchX collapsed a six-week literature review into an afternoon. The IEEE report agent alone is worth it." },
-    { name: "Prof. Lena Schmidt", role: "Researcher — ETH Zürich", quote: "The gap detection agent surfaces directions we hadn't considered. It's like having a senior collaborator on tap." },
-    { name: "Maya Okafor", role: "Master's student — MIT", quote: "From PDF upload to a polished presentation deck in under 20 minutes. I shipped my thesis defense with it." },
-    { name: "Yuki Tanaka", role: "Research Engineer — DeepMind", quote: "The RAG pipeline over our private corpus is the cleanest implementation I've used." },
-    { name: "Carlos Ríos", role: "Scientist — CERN", quote: "Multi-agent orchestration that actually works. The coordinator's plans are auditable end to end." },
-    { name: "Priya Nair", role: "Postdoc — Stanford NLP", quote: "Dataset and experiment recommendations have been spot-on across three different sub-fields." },
+    {
+      name: "Dr. Aarav Mehta",
+      role: "PhD, ML — IIT Bombay",
+      quote:
+        "ResearchX collapsed a six-week literature review into an afternoon. The IEEE report agent alone is worth it.",
+    },
+    {
+      name: "Prof. Lena Schmidt",
+      role: "Researcher — ETH Zürich",
+      quote:
+        "The gap detection agent surfaces directions we hadn't considered. It's like having a senior collaborator on tap.",
+    },
+    {
+      name: "Maya Okafor",
+      role: "Master's Student — MIT",
+      quote:
+        "From PDF upload to a polished presentation deck in under 20 minutes. I shipped my thesis defense with it.",
+    },
+    {
+      name: "Yuki Tanaka",
+      role: "Research Engineer — DeepMind",
+      quote:
+        "The RAG pipeline over our private corpus is the cleanest implementation I've used.",
+    },
+    {
+      name: "Carlos Ríos",
+      role: "Scientist — CERN",
+      quote:
+        "Multi-agent orchestration that actually works. The coordinator's plans are auditable end to end.",
+    },
+    {
+      name: "Priya Nair",
+      role: "Postdoc — Stanford NLP",
+      quote:
+        "Dataset and experiment recommendations have been spot-on across three different sub-fields.",
+    },
   ];
+
   return (
     <section className="relative py-24">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <SectionHeader
           eyebrow="Testimonials"
-          title="Researchers building with ResearchX"
-          subtitle="From PhD students to research engineers at frontier labs."
+          title="Trusted by Researchers Worldwide"
+          subtitle="From students to leading research labs, teams rely on ResearchX to accelerate scientific discovery."
         />
-        <div className="mt-14 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+
+        <div className="mt-14 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {items.map((t, i) => (
             <motion.div
               key={t.name}
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 25 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              transition={{ duration: 0.4, delay: (i % 3) * 0.08 }}
-              className="rounded-2xl glass p-6"
+              transition={{
+                duration: 0.45,
+                delay: (i % 3) * 0.08,
+              }}
+              whileHover={{
+                y: -8,
+                scale: 1.03,
+              }}
+              className="group relative overflow-hidden rounded-3xl border border-white/10 glass-strong p-7 shadow-xl"
             >
-              <Quote className="h-5 w-5 text-[var(--purple-glow)]" />
-              <p className="mt-3 text-sm leading-relaxed">{t.quote}</p>
-              <div className="mt-5 flex items-center gap-3 border-t border-border/60 pt-4">
-                <div className="grid h-10 w-10 place-items-center rounded-full gradient-primary-bg text-sm font-semibold text-primary-foreground">
-                  {t.name.split(" ").map((s) => s[0]).slice(0, 2).join("")}
+              <div
+                className="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+                style={{
+                  background:
+                    "radial-gradient(circle at top right, rgba(99,102,241,.18), transparent 65%)",
+                }}
+              />
+
+              <div className="relative z-10">
+
+                <Quote className="h-8 w-8 text-[var(--purple-glow)]" />
+
+                <div className="mt-4 flex gap-1">
+                  {[...Array(5)].map((_, index) => (
+                    <Star
+                      key={index}
+                      className="h-4 w-4 fill-yellow-400 text-yellow-400"
+                    />
+                  ))}
                 </div>
-                <div>
-                  <div className="text-sm font-medium">{t.name}</div>
-                  <div className="text-xs text-muted-foreground">{t.role}</div>
+
+                <p className="mt-5 text-sm leading-7 text-muted-foreground">
+                  "{t.quote}"
+                </p>
+
+                <div className="mt-6 flex items-center gap-4 border-t border-white/10 pt-5">
+                  <div className="grid h-14 w-14 place-items-center rounded-full gradient-primary-bg text-base font-bold text-primary-foreground shadow-lg">
+                    {t.name
+                      .split(" ")
+                      .map((s) => s[0])
+                      .slice(0, 2)
+                      .join("")}
+                  </div>
+
+                  <div>
+                    <div className="font-semibold">
+                      {t.name}
+                    </div>
+
+                    <div className="text-sm text-muted-foreground">
+                      {t.role}
+                    </div>
+                  </div>
                 </div>
+
               </div>
             </motion.div>
           ))}
@@ -537,7 +799,6 @@ function Testimonials() {
     </section>
   );
 }
-
 /* ---------------- FAQ ---------------- */
 function FAQ() {
   const faqs = [
@@ -577,29 +838,92 @@ function FAQ() {
 function CTA() {
   return (
     <section className="relative py-24">
-      <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
-        <div className="relative overflow-hidden rounded-3xl border border-border/60 p-12 text-center">
-          <div className="absolute inset-0 gradient-primary-bg opacity-20" />
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+
+        <motion.div
+          initial={{ opacity: 0, scale: 0.96 }}
+          whileInView={{ opacity: 1, scale: 1 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.6 }}
+          className="relative overflow-hidden rounded-[32px] border border-white/10 glass-strong px-8 py-16 shadow-2xl sm:px-16"
+        >
+
+          <div className="absolute inset-0 gradient-primary-bg opacity-15" />
           <div className="absolute inset-0 grid-bg opacity-30" />
-          <div className="relative">
-            <h2 className="font-display text-4xl font-bold sm:text-5xl">
-              Ship research at the <span className="gradient-text">speed of thought</span>
+
+          <div className="absolute -top-24 -left-24 h-72 w-72 rounded-full bg-primary/20 blur-3xl" />
+          <div className="absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-[var(--purple-glow)]/20 blur-3xl" />
+
+          <div className="relative text-center">
+
+            <span className="inline-flex items-center gap-2 rounded-full glass px-4 py-2 text-sm font-medium text-[var(--electric)]">
+              🚀 AI Powered Research Platform
+            </span>
+
+            <h2 className="mt-6 font-display text-4xl font-bold leading-tight sm:text-6xl">
+              Ship Research at the{" "}
+              <span className="gradient-text">
+                Speed of Thought
+              </span>
             </h2>
-            <p className="mt-4 text-muted-foreground">
-              Join 1,000+ researchers using ResearchX to discover, analyze and publish faster.
+
+            <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-muted-foreground">
+              Discover papers, analyze PDFs, generate IEEE reports,
+              build presentations and uncover research gaps using
+              specialized AI agents working together.
             </p>
-            <div className="mt-8 flex flex-wrap justify-center gap-3">
+
+            <div className="mt-10 flex flex-wrap justify-center gap-4">
+
               <Button asChild variant="hero" size="lg">
-                <Link to="/register">Get Started Free <ArrowRight className="h-4 w-4" /></Link>
+                <Link to="/register">
+                  Get Started Free
+                  <ArrowRight className="ml-2 h-5 w-5" />
+                </Link>
               </Button>
+
               <Button asChild variant="glass" size="lg">
                 <Link to="/login">
-  Login
-</Link>
+                  Login
+                </Link>
               </Button>
+
             </div>
+
+            <div className="mt-12 grid gap-6 sm:grid-cols-3">
+
+              <div>
+                <h3 className="text-3xl font-bold gradient-text">
+                  5M+
+                </h3>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Research Papers
+                </p>
+              </div>
+
+              <div>
+                <h3 className="text-3xl font-bold gradient-text">
+                  10
+                </h3>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  AI Research Agents
+                </p>
+              </div>
+
+              <div>
+                <h3 className="text-3xl font-bold gradient-text">
+                  1000+
+                </h3>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Active Researchers
+                </p>
+              </div>
+
+            </div>
+
           </div>
-        </div>
+
+        </motion.div>
       </div>
     </section>
   );
@@ -607,19 +931,36 @@ function CTA() {
 
 /* ---------------- HELPERS ---------------- */
 function SectionHeader({
-  eyebrow, title, subtitle,
-}: { eyebrow: string; title: string; subtitle?: string }) {
+  eyebrow,
+  title,
+  subtitle,
+}: {
+  eyebrow: string;
+  title: string;
+  subtitle?: string;
+}) {
   return (
-    <div className="mx-auto max-w-2xl text-center">
-      <span className="inline-flex items-center gap-2 rounded-full glass px-3 py-1 text-xs uppercase tracking-wide text-[var(--electric)]">
-        <ChevronDown className="h-3 w-3" /> {eyebrow}
+    <motion.div
+      initial={{ opacity: 0, y: 25 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      transition={{ duration: 0.5 }}
+      className="mx-auto max-w-3xl text-center"
+    >
+      <span className="inline-flex items-center gap-2 rounded-full glass px-4 py-2 text-xs font-medium uppercase tracking-[0.25em] text-[var(--electric)]">
+        <ChevronDown className="h-3.5 w-3.5" />
+        {eyebrow}
       </span>
-      <h2 className="mt-4 font-display text-3xl font-bold tracking-tight sm:text-5xl">
+
+      <h2 className="mt-6 font-display text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl">
         {title}
       </h2>
+
       {subtitle && (
-        <p className="mt-4 text-muted-foreground">{subtitle}</p>
+        <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-muted-foreground">
+          {subtitle}
+        </p>
       )}
-    </div>
+    </motion.div>
   );
 }
