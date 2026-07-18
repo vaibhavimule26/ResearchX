@@ -38,7 +38,7 @@ from app.api.analysis import router as analysis_router
 from app.api.report import router as report_router
 from app.api.ppt import router as ppt_router
 from app.api.presentation import router as presentation_router
-
+from app.api.dashboard import router as dashboard_router
 # ==========================================================
 # Create FastAPI Application
 # ==========================================================
@@ -142,3 +142,5 @@ app.include_router(ppt_router)
 app.include_router(
     presentation_router
 )
+
+app.include_router(dashboard_router)

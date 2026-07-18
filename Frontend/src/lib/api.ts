@@ -309,3 +309,51 @@ export async function generatePresentation(
 
   return handleResponse(response);
 }
+
+// ==========================
+// Dashboard
+// ==========================
+
+export type DashboardResponse = {
+  success: boolean;
+  data: {
+    papers: number;
+    projects: number;
+    reports: number;
+    presentations: number;
+    recentResearch: any[];
+    tasks: any[];
+    activity: any[];
+    progress: any[];
+    suggestions: string[];
+  };
+};
+
+export interface SearchResult {
+  title: string;
+  uploaded_at: string;
+}
+
+export interface DashboardSearchResponse {
+  success: boolean;
+  results: SearchResult[];
+}
+
+export async function getDashboard(): Promise<DashboardResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/dashboard`
+  );
+
+  return handleResponse(response);
+}
+
+export async function searchDashboard(
+  query: string
+): Promise<DashboardSearchResponse> {
+
+  const response = await fetch(
+    `${API_BASE_URL}/dashboard/search?query=${encodeURIComponent(query)}`
+  );
+
+  return handleResponse(response);
+}
