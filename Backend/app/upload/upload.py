@@ -1,4 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi.responses import FileResponse
 
 from app.database.mongodb import papers_collection
 from app.database.chroma import collection
@@ -204,6 +205,36 @@ async def get_papers():
             "papers": papers,
             "total": len(papers)
         }
+    )
+    
+    # ==========================
+# Download PDF
+# ==========================
+@router.get("/papers/{filename}")
+async def download_paper(filename: str):
+
+    paper = papers_collection.find_one(
+        {"filename": filename}
+    )
+
+    if not paper:
+        raise HTTPException(
+            status_code=404,
+            detail="Paper not found"
+        )
+
+    file_path = paper.get("filepath")
+
+    if not file_path or not os.path.exists(file_path):
+        raise HTTPException(
+            status_code=404,
+            detail="PDF file not found"
+        )
+
+    return FileResponse(
+        path=file_path,
+        filename=filename,
+        media_type="application/pdf",
     )
 # ==========================
 # Delete Uploaded Paper

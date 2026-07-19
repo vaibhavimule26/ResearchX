@@ -4,35 +4,38 @@ import { Bell, Command, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { searchDashboard } from "@/lib/api";
 
-export function DashboardTopbar({ title }: { title?: string }) {
-  console.log("DashboardTopbar Loaded");
+export function DashboardTopbar({
+  title,
+  userName,
+}: {
+  title?: string;
+  userName?: string;
+}) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<any[]>([]);
 
- const handleSearch = async (
-  e: React.KeyboardEvent<HTMLInputElement>
-) => {
-  if (e.key !== "Enter") return;
+  const performSearch = async () => {
+    if (!query.trim()) {
+      setResults([]);
+      return;
+    }
 
-  console.log("Searching:", query);
+    try {
+      const response = await searchDashboard(query);
+      setResults(response.results);
+    } catch (error) {
+      console.error("Search Error:", error);
+    }
+  };
 
-  if (!query.trim()) {
-    setResults([]);
-    return;
-  }
+  const handleSearch = async (
+    e: React.KeyboardEvent<HTMLInputElement>
+  ) => {
+    if (e.key === "Enter") {
+      await performSearch();
+    }
+  };
 
-  try {
-    const response = await searchDashboard(query);
-
-    console.log("API Response:", response);
-
-    setResults(response.results);
-
-    console.log("Results:", response.results);
-  } catch (error) {
-    console.error("Search Error:", error);
-  }
-};
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-4 border-b border-border/60 bg-background/70 px-4 backdrop-blur-xl sm:px-6">
       <div className="flex items-center gap-3 min-w-0">
@@ -43,37 +46,55 @@ export function DashboardTopbar({ title }: { title?: string }) {
         )}
       </div>
 
-      <div className="relative hidden flex-1 max-w-md md:block">
-        <div className="flex items-center rounded-xl border border-border bg-secondary/50 px-3">
-          <Search className="h-4 w-4 text-muted-foreground" />
+      <div className="relative flex-1 max-w-md">
+        <div className="flex items-center gap-2">
 
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={handleSearch}
-            placeholder="Search papers, agents, projects..."
-            className="flex-1 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground"
-          />
+  <div className="flex flex-1 items-center rounded-xl border border-border bg-secondary/50 px-3">
 
-          <kbd className="flex items-center gap-0.5 rounded bg-background px-1.5 py-0.5 text-[10px]">
-            <Command className="h-3 w-3" /> K
-          </kbd>
-        </div>
+    <Search className="h-4 w-4 text-muted-foreground" />
+
+    <input
+      type="text"
+      value={query}
+      onChange={(e) => setQuery(e.target.value)}
+      onKeyDown={handleSearch}
+      placeholder="Search papers..."
+      className="flex-1 bg-transparent px-3 py-2 text-sm outline-none placeholder:text-muted-foreground"
+    />
+
+  </div>
+
+  <Button
+    onClick={performSearch}
+    variant="default"
+  >
+    Search
+  </Button>
+
+</div>
 
         {results.length > 0 && (
-          <div className="absolute mt-2 w-full rounded-xl border border-border bg-background shadow-lg z-50">
+          <div className="absolute left-0 top-full mt-2 w-full rounded-xl border border-border bg-background shadow-xl z-50">
+
             {results.map((paper) => (
-              <div
-                key={paper.title + paper.uploaded_at}
-                className="cursor-pointer border-b border-border px-4 py-3 hover:bg-accent"
-              >
-                <div className="font-medium">{paper.title}</div>
+  <div
+    key={paper.title + paper.uploaded_at}
+    onClick={() => {
+      window.location.href =
+        `/dashboard/papers?paper=${encodeURIComponent(paper.title)}`;
+    }}
+    className="cursor-pointer border-b border-border px-4 py-3 hover:bg-accent"
+  >
+                <div className="font-medium">
+                  {paper.title}
+                </div>
+
                 <div className="text-xs text-muted-foreground">
                   {paper.uploaded_at}
                 </div>
               </div>
             ))}
+
           </div>
         )}
       </div>
@@ -84,8 +105,14 @@ export function DashboardTopbar({ title }: { title?: string }) {
         </Button>
 
         <div className="grid h-9 w-9 place-items-center rounded-full gradient-primary-bg text-sm font-semibold text-primary-foreground">
-          AL
-        </div>
+  {userName
+    ? userName
+        .split(" ")
+        .map((name) => name[0])
+        .join("")
+        .toUpperCase()
+    : "U"}
+</div>
       </div>
     </header>
   );

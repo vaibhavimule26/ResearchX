@@ -13,8 +13,13 @@ import {
   getPapers,
   runAnalysis,
 } from "@/lib/api";
+import { useSearch } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/dashboard/summary")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    paper: typeof search.paper === "string" ? search.paper : "",
+  }),
+
   head: () => ({
     meta: [
       {
@@ -22,6 +27,7 @@ export const Route = createFileRoute("/dashboard/summary")({
       },
     ],
   }),
+
   component: SummaryPage,
 });
 
@@ -31,6 +37,10 @@ type Paper = {
 };
 
 function SummaryPage() {
+  const search = useSearch({
+    from: "/dashboard/summary",
+  });
+
   const [papers, setPapers] = useState<Paper[]>([]);
   const [selectedPaper, setSelectedPaper] = useState("");
   const [summary, setSummary] = useState("");
@@ -54,10 +64,10 @@ function SummaryPage() {
 
         setPapers(uploadedPapers);
 
-        if (uploadedPapers.length > 0) {
-          setSelectedPaper(
-            uploadedPapers[0].filename
-          );
+        if (search.paper) {
+          setSelectedPaper(search.paper);
+        } else if (uploadedPapers.length > 0) {
+          setSelectedPaper(uploadedPapers[0].filename);
         }
       } catch (error) {
         setError(
@@ -72,6 +82,21 @@ function SummaryPage() {
 
     loadPapers();
   }, []);
+
+  // ==========================
+  // Auto-trigger Summary Action
+  // ==========================
+  useEffect(() => {
+    if (
+      !selectedPaper ||
+      loadingPapers ||
+      loading
+    ) {
+      return;
+    }
+
+    generateSummary();
+  }, [selectedPaper]);
 
   // ==========================
   // Generate Summary

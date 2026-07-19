@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from sentence_transformers import SentenceTransformer
 
 from app.database.chroma import collection
+from app.database.mongodb import agent_runs_collection
 
 from app.agents.summarizer import summarize_paper
 from app.agents.research_gap import find_research_gaps
@@ -182,6 +183,17 @@ def run_analysis(
                 status_code=500,
                 detail="Analysis returned an empty result",
             )
+
+        if request.analysis_type == "summary":
+            agent_runs_collection.update_one(
+    {},
+    {
+        "$inc": {
+            "summary": 1
+        }
+    },
+    upsert=True,
+)
 
         return AnalysisResponse(
             success=True,

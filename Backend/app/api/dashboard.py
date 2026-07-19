@@ -1,11 +1,22 @@
 from fastapi import APIRouter, Query
-from app.database.mongodb import papers_collection
+from app.database.mongodb import papers_collection, agent_runs_collection
 
 router = APIRouter()
 
 
 @router.get("/dashboard")
 def get_dashboard():
+    agent_runs = agent_runs_collection.find_one({}, {"_id": 0})
+    if not agent_runs:
+        agent_runs = {
+            "summary": 0,
+            "datasets": 0,
+            "experiments": 0,
+            "literature": 0,
+            "novelty": 0,
+            "reports": 0,
+            "ppt": 0,
+        }
 
     papers = papers_collection.count_documents({})
 
@@ -41,6 +52,7 @@ def get_dashboard():
             "projects": 0,
             "reports": 0,
             "presentations": 0,
+            "agent_runs": agent_runs,
 
             "recentResearch": recent,
 
@@ -92,6 +104,7 @@ def get_dashboard():
                 "Generate summary for latest uploaded paper",
                 "Run Research Gap Analysis",
                 "Generate IEEE Report",
+                "Generates Presentation",
             ],
         },
     }

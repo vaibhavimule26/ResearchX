@@ -351,9 +351,15 @@ export async function searchDashboard(
   query: string
 ): Promise<DashboardSearchResponse> {
 
+  console.log("Calling API:", query);
+
   const response = await fetch(
     `${API_BASE_URL}/dashboard/search?query=${encodeURIComponent(query)}`
   );
 
-  return handleResponse(response);
+  const data = await handleResponse(response);
+
+  console.log("API Returned:", data);
+
+  return data;
 }
