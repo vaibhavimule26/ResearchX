@@ -15,3 +15,5 @@ papers_collection = db["papers"]
 agent_runs_collection = db["agent_runs"]
 
 search_history_collection = db["search_history"]
+
+research_sessions_collection = db["research_sessions"]

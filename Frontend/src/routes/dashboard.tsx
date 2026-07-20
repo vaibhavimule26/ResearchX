@@ -1,7 +1,10 @@
-import { createFileRoute, Outlet } from "@tanstack/react-router";
+import { createFileRoute, Outlet, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+
 import { DashboardSidebar, useSidebar } from "@/components/dashboard/sidebar";
 import { DashboardTopbar } from "@/components/dashboard/topbar";
 import { AnimatedBackground } from "@/components/site/animated-background";
+import { getCurrentUser } from "@/lib/api";
 
 export const Route = createFileRoute("/dashboard")({
   component: DashboardLayout,
@@ -9,15 +12,45 @@ export const Route = createFileRoute("/dashboard")({
 
 function DashboardLayout() {
   const { collapsed, toggle } = useSidebar();
+  const navigate = useNavigate();
+
+  const [user, setUser] = useState({
+    name: "",
+    email: "",
+  });
+
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      navigate({ to: "/login" });
+      return;
+    }
+
+    getCurrentUser(token)
+      .then((data) => setUser(data))
+      .catch((err) => console.error(err));
+  }, [navigate]);
+
   return (
     <div className="relative flex min-h-screen w-full overflow-hidden bg-background">
       <AnimatedBackground variant="subtle" />
-      <DashboardSidebar collapsed={collapsed} onToggle={toggle} />
+
+      <DashboardSidebar
+        collapsed={collapsed}
+        onToggle={toggle}
+      />
+
       <div className="flex min-w-0 flex-1 flex-col">
-        <DashboardTopbar />
+
+        <DashboardTopbar
+          userName={user.name}
+        />
+
         <main className="scrollbar-thin flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <Outlet />
         </main>
+
       </div>
     </div>
   );

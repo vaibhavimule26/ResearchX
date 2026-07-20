@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Search, Upload, FileSpreadsheet, Presentation, Sparkles, BookOpen,
-  ArrowUp, Paperclip, Bot, FileText, Lightbulb, Database, FlaskConical,
+  ArrowUp, Paperclip, Bot, FileText, Lightbulb, HelpCircle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -23,19 +23,11 @@ const QUICK = [
   { icon: Presentation, label: "Generate PPT" },
 ];
 
-const AGENTS = [
-  { name: "Paper Retrieval", task: "Fetching 24 papers from arXiv", pct: 67, icon: Search },
-  { name: "PDF Analysis", task: "Chunking 3 PDFs · pass 2/3", pct: 42, icon: FileText },
-  { name: "Gap Detection", task: "Synthesizing cross-paper insights", pct: 18, icon: Lightbulb },
-  { name: "Dataset Agent", task: "Idle — waiting on summary", pct: 0, icon: Database, idle: true },
-];
-
-const RECENT = [
-  "Long-context attention mechanisms",
-  "Sparse mixture of experts (MoE)",
-  "Synthetic data for instruction tuning",
-  "Retrieval over multimodal documents",
-];
+const AGENT_ICON_MAP: Record<string, any> = {
+  "Paper Retrieval": Search,
+  "Summary": FileText,
+  "Gap Analysis": Lightbulb,
+};
 
 const SAVED = [
   { t: "Attention Is All You Need", a: "Vaswani et al." },
@@ -52,6 +44,62 @@ const TIMELINE = [
 
 function WorkspacePage() {
   const [prompt, setPrompt] = useState("");
+  const [agents, setAgents] = useState<any[]>([]);
+  const [recentResearch, setRecentResearch] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const runResearch = async () => {
+    if (!prompt.trim()) {
+      alert("Please enter a research topic.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const response = await fetch(
+        "http://127.0.0.1:8000/analysis/workspace",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            topic: prompt,
+          }),
+        }
+      );
+
+      const data = await response.json();
+      console.log(data);
+      
+      setAgents(data.agents || []);
+      loadRecentResearch();
+
+    } catch (error) {
+      console.error(error);
+      alert("Failed to start research.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadRecentResearch = async () => {
+    try {
+      const response = await fetch(
+        "http://127.0.0.1:8000/analysis/recent"
+      );
+      const data = await response.json();
+      setRecentResearch(data);
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  useEffect(() => {
+    loadRecentResearch();
+  }, []);
+
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
       <div className="min-w-0">
@@ -76,8 +124,13 @@ function WorkspacePage() {
               <Button variant="glass" size="sm"><Paperclip className="h-4 w-4" /> Attach</Button>
               <Button variant="glass" size="sm"><Bot className="h-4 w-4" /> Choose agents</Button>
             </div>
-            <Button variant="hero" size="sm">
-              Run Research <ArrowUp className="h-4 w-4" />
+            <Button
+              variant="hero"
+              size="sm"
+              onClick={runResearch}
+              disabled={loading}
+            >
+              {loading ? "Starting..." : "Run Research"} <ArrowUp className="h-4 w-4" />
             </Button>
           </div>
         </div>
@@ -113,31 +166,44 @@ function WorkspacePage() {
         <div className="mt-6 rounded-2xl glass p-5">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold">Active session</h3>
-            <span className="rounded-full bg-[var(--success)]/15 px-2 py-0.5 text-xs text-[var(--success)]">Running</span>
+            <span className={`rounded-full px-2 py-0.5 text-xs ${agents.length > 0 ? "bg-[var(--success)]/15 text-[var(--success)]" : "bg-muted text-muted-foreground"}`}>
+              {agents.length > 0 ? "Running" : "Idle"}
+            </span>
           </div>
           <div className="mt-4 space-y-3">
-            {AGENTS.map((a) => (
-              <motion.div
-                key={a.name}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="rounded-xl border border-border/40 bg-secondary/30 p-4"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className={`grid h-9 w-9 place-items-center rounded-xl ${a.idle ? "bg-muted" : "gradient-primary-bg"}`}>
-                      <a.icon className={`h-4 w-4 ${a.idle ? "text-muted-foreground" : "text-primary-foreground"}`} />
+            {agents.length === 0 ? (
+              <p className="text-sm text-muted-foreground italic text-center py-4">
+                No active session running. Enter a topic above to dispatch research agents.
+              </p>
+            ) : (
+              agents.map((a) => {
+                const AgentIcon = AGENT_ICON_MAP[a.agent] || HelpCircle;
+                const isIdle = a.status === "Pending";
+
+                return (
+                  <motion.div
+                    key={a.agent}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="rounded-xl border border-border/40 bg-secondary/30 p-4"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={`grid h-9 w-9 place-items-center rounded-xl ${isIdle ? "bg-muted" : "gradient-primary-bg"}`}>
+                          <AgentIcon className={`h-4 w-4 ${isIdle ? "text-muted-foreground" : "text-primary-foreground"}`} />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-medium">{a.agent}</div>
+                          <div className="truncate text-xs text-muted-foreground">Status: {a.status}</div>
+                        </div>
+                      </div>
+                      <span className={`h-2 w-2 rounded-full ${isIdle ? "bg-muted-foreground" : "bg-[var(--success)] animate-pulse"}`} />
                     </div>
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium">{a.name}</div>
-                      <div className="truncate text-xs text-muted-foreground">{a.task}</div>
-                    </div>
-                  </div>
-                  <span className={`h-2 w-2 rounded-full ${a.idle ? "bg-muted-foreground" : "bg-[var(--success)] animate-pulse"}`} />
-                </div>
-                <Progress value={a.pct} className="mt-3" />
-              </motion.div>
-            ))}
+                    <Progress value={a.progress} className="mt-3" />
+                  </motion.div>
+                );
+              })
+            )}
           </div>
         </div>
       </div>
@@ -145,11 +211,17 @@ function WorkspacePage() {
       <aside className="space-y-4">
         <div className="rounded-2xl glass p-5">
           <h3 className="font-semibold">Recent Research</h3>
-          <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-            {RECENT.map((r) => (
-              <li key={r} className="truncate hover:text-foreground cursor-pointer">{r}</li>
-            ))}
-          </ul>
+          {recentResearch.length === 0 ? (
+            <p className="mt-3 text-xs text-muted-foreground italic">No past sessions found.</p>
+          ) : (
+            <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
+              {recentResearch.map((r: any, idx: number) => (
+                <li key={r.session_id || idx} className="truncate hover:text-foreground cursor-pointer">
+                  {r.topic}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
         <div className="rounded-2xl glass p-5">
           <h3 className="font-semibold">Saved Papers</h3>

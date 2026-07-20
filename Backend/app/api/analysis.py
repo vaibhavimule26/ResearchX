@@ -1,11 +1,15 @@
 from typing import Literal
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from sentence_transformers import SentenceTransformer
 
 from app.database.chroma import collection
-from app.database.mongodb import agent_runs_collection
+from app.database.mongodb import (
+    research_sessions_collection,
+    agent_runs_collection,
+)
 
 from app.agents.summarizer import summarize_paper
 from app.agents.research_gap import find_research_gaps
@@ -15,6 +19,7 @@ from app.agents.literature_agent import generate_literature_survey
 from app.agents.novelty_agent import analyze_novelty
 from app.agents.report_agent import generate_final_report
 from app.agents.ppt_agent import generate_presentation
+from app.agents.workspace_coordinator import run_workspace
 
 
 router = APIRouter(
@@ -26,9 +31,7 @@ router = APIRouter(
 # ==========================================================
 # Load Embedding Model Once
 # ==========================================================
-model = SentenceTransformer(
-    "all-MiniLM-L6-v2"
-)
+model = SentenceTransformer("all-MiniLM-L6-v2")
 
 
 # ==========================================================
@@ -47,7 +50,7 @@ AnalysisType = Literal[
 
 
 # ==========================================================
-# Request Model
+# Request Models
 # ==========================================================
 class AnalysisRequest(BaseModel):
     paper_name: str = Field(
@@ -59,8 +62,12 @@ class AnalysisRequest(BaseModel):
     analysis_type: AnalysisType
 
 
+class WorkspaceRequest(BaseModel):
+    topic: str
+
+
 # ==========================================================
-# Response Model
+# Response Models
 # ==========================================================
 class AnalysisResponse(BaseModel):
     success: bool
@@ -68,6 +75,14 @@ class AnalysisResponse(BaseModel):
     paper_name: str
     analysis_type: AnalysisType
     result: str
+
+
+class WorkspaceResponse(BaseModel):
+    success: bool
+    session_id: str
+    topic: str
+    message: str
+    agents: list
 
 
 # ==========================================================
@@ -138,22 +153,14 @@ def run_analysis(
 ):
     try:
 
-        retrieval_query = ANALYSIS_QUERIES[
-            request.analysis_type
-        ]
+        retrieval_query = ANALYSIS_QUERIES[request.analysis_type]
 
-        query_embedding = model.encode(
-            retrieval_query
-        ).tolist()
+        query_embedding = model.encode(retrieval_query).tolist()
 
         results = collection.query(
-            query_embeddings=[
-                query_embedding
-            ],
+            query_embeddings=[query_embedding],
             n_results=10,
-            where={
-                "paper_name": request.paper_name
-            },
+            where={"paper_name": request.paper_name},
         )
 
         documents = results.get(
@@ -164,17 +171,12 @@ def run_analysis(
         if not documents:
             raise HTTPException(
                 status_code=404,
-                detail=(
-                    f"No indexed content found for "
-                    f"'{request.paper_name}'"
-                ),
+                detail=f"No indexed content found for '{request.paper_name}'",
             )
 
         context = "\n\n".join(documents)
 
-        handler = ANALYSIS_HANDLERS[
-            request.analysis_type
-        ]
+        handler = ANALYSIS_HANDLERS[request.analysis_type]
 
         result = handler(context)
 
@@ -186,14 +188,14 @@ def run_analysis(
 
         if request.analysis_type == "summary":
             agent_runs_collection.update_one(
-    {},
-    {
-        "$inc": {
-            "summary": 1
-        }
-    },
-    upsert=True,
-)
+                {},
+                {
+                    "$inc": {
+                        "summary": 1
+                    }
+                },
+                upsert=True,
+            )
 
         return AnalysisResponse(
             success=True,
@@ -211,3 +213,57 @@ def run_analysis(
             status_code=500,
             detail=f"Analysis failed: {str(exc)}",
         ) from exc
+
+
+# ==========================================================
+# Run Multi-Agent Workspace Analysis
+# ==========================================================
+@router.post(
+    "/workspace",
+    response_model=WorkspaceResponse,
+)
+def run_workspace_analysis(request: WorkspaceRequest):
+    try:
+        session_id = str(uuid4())
+
+        agents = run_workspace(
+            request.topic,
+            session_id,
+        )
+
+        return WorkspaceResponse(
+            success=True,
+            session_id=session_id,
+            topic=request.topic,
+            message="Research session started successfully.",
+            agents=agents,
+        )
+
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+
+        raise HTTPException(
+            status_code=500,
+            detail=str(e),
+        )
+
+
+# ==========================================================
+# Get Recent Workspace Research Sessions
+# ==========================================================
+@router.get("/recent")
+def get_recent_research():
+    try:
+        sessions = list(
+            research_sessions_collection.find({}, {"_id": 0})
+            .sort("created_at", -1)
+            .limit(10)
+        )
+        return sessions
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch recent research: {str(exc)}",
+        )

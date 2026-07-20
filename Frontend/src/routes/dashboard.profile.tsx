@@ -1,6 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { Award, BookOpen, FileText, Sparkles, Trophy, Zap } from "lucide-react";
 import { PageHeader } from "@/components/dashboard/topbar";
+import { getCurrentUser } from "@/lib/api";
 
 export const Route = createFileRoute("/dashboard/profile")({
   head: () => ({ meta: [{ title: "Profile — ResearchX" }] }),
@@ -20,14 +22,37 @@ const ACHIEVEMENTS = [
 ];
 
 function ProfilePage() {
+  const [user, setUser] = useState({
+    name: "",
+    email: "",
+  });
+
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+
+    if (!token) return;
+
+    getCurrentUser(token)
+      .then((data) => setUser(data))
+      .catch(console.error);
+  }, []);
+
   return (
     <div>
       <PageHeader title="Profile" subtitle="Your research identity & achievements." />
       <div className="grid gap-4 lg:grid-cols-[320px_1fr]">
         <div className="rounded-2xl glass p-6 text-center">
-          <div className="mx-auto grid h-20 w-20 place-items-center rounded-full gradient-primary-bg font-display text-2xl font-bold text-primary-foreground">A</div>
-          <h2 className="mt-3 font-display text-xl font-semibold">Ada Lovelace</h2>
-          <p className="text-sm text-muted-foreground">ada@researchx.ai</p>
+          <div className="mx-auto grid h-20 w-20 place-items-center rounded-full gradient-primary-bg font-display text-2xl font-bold text-primary-foreground">
+            {user.name
+              ? user.name
+                  .split(" ")
+                  .map((n) => n[0])
+                  .join("")
+                  .toUpperCase()
+              : "U"}
+          </div>
+          <h2 className="mt-3 font-display text-xl font-semibold">{user.name || "Loading..."}</h2>
+          <p className="text-sm text-muted-foreground">{user.email || "Loading..."}</p>
           <p className="mt-2 text-xs text-muted-foreground">PhD candidate · Computational Linguistics</p>
           <div className="mt-5 grid grid-cols-2 gap-2">
             {STATS.map((s) => (
@@ -41,7 +66,10 @@ function ProfilePage() {
 
         <div className="space-y-4">
           <div className="rounded-2xl glass p-5">
-            <div className="flex items-center gap-2"><Award className="h-4 w-4 text-[var(--warning)]" /><h3 className="font-semibold">Achievements</h3></div>
+            <div className="flex items-center gap-2">
+              <Award className="h-4 w-4 text-[var(--warning)]" />
+              <h3 className="font-semibold">Achievements</h3>
+            </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               {ACHIEVEMENTS.map((a) => (
                 <div key={a.name} className="flex items-start gap-3 rounded-xl border border-border/40 bg-secondary/30 p-3">
