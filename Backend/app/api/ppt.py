@@ -4,8 +4,8 @@ import tempfile
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sentence_transformers import SentenceTransformer
 
+from app.embeddings.embedder import model
 from app.database.chroma import collection
 from app.agents.ppt_agent import generate_presentation
 from app.utils.ppt_export import create_ppt
@@ -14,10 +14,6 @@ from app.utils.ppt_export import create_ppt
 router = APIRouter(
     prefix="/ppt",
     tags=["PowerPoint"],
-)
-
-model = SentenceTransformer(
-    "all-MiniLM-L6-v2"
 )
 
 
@@ -35,29 +31,16 @@ def generate_ppt(
         # ----------------------------------------
         # Retrieve Paper Context
         # ----------------------------------------
-        query = (
-            "complete research paper "
-            "abstract methodology "
-            "results datasets "
-            "experiments conclusion"
-        )
-
-        embedding = model.encode(
-            query
-        ).tolist()
-
-        results = collection.query(
-            query_embeddings=[embedding],
-            n_results=10,
+        results = collection.get(
             where={
                 "paper_name": request.paper_name
-            },
+            }
         )
 
-        docs = results.get(
-            "documents",
-            [[]],
-        )[0]
+        docs = results.get("documents", [])
+
+        if docs and isinstance(docs[0], list):
+            docs = docs[0]
 
         if not docs:
             raise HTTPException(

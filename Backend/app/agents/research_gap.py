@@ -62,3 +62,30 @@ Important rules:
         context=context,
         question=question,
     )
+
+
+# ==========================================================
+# Workspace Research Gap Agent
+# ==========================================================
+def run_research_gap_agent(topic: str, papers) -> str:
+    """
+    Execute the Research Gap Agent for the selected papers.
+    Called from /analysis/run-agent.
+    Creates a combined context from all selected papers.
+    """
+
+    print("Running Research Gap Agent...")
+
+    context = "\n\n".join(
+    [
+        f"""
+Title: {paper.title}
+Authors: {", ".join(paper.authors)}
+Summary: {paper.summary}
+Published: {paper.published}
+"""
+        for paper in papers
+    ]
+)
+
+    return find_research_gaps(context)

@@ -3,10 +3,9 @@ import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import {
   Search, Upload, FileSpreadsheet, Presentation, Sparkles, BookOpen,
-  ArrowUp, Paperclip, Bot, FileText, Lightbulb, HelpCircle
+  Paperclip, Bot, FileText, Lightbulb, HelpCircle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 
 export const Route = createFileRoute("/dashboard/workspace")({
@@ -47,8 +46,14 @@ function WorkspacePage() {
   const [agents, setAgents] = useState<any[]>([]);
   const [recentResearch, setRecentResearch] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [papers, setPapers] = useState<any[]>([]);
+  const [selectedPapers, setSelectedPapers] = useState<number[]>([]);
+  const [summary, setSummary] = useState("");
 
-  const runResearch = async () => {
+  const [sessionId, setSessionId] = useState("");
+  const [agentResults, setAgentResults] = useState<Record<string, string>>({});
+
+  const searchPapers = async () => {
     if (!prompt.trim()) {
       alert("Please enter a research topic.");
       return;
@@ -58,7 +63,7 @@ function WorkspacePage() {
       setLoading(true);
 
       const response = await fetch(
-        "http://127.0.0.1:8000/analysis/workspace",
+        "http://127.0.0.1:8000/analysis/search-papers",
         {
           method: "POST",
           headers: {
@@ -71,16 +76,105 @@ function WorkspacePage() {
       );
 
       const data = await response.json();
-      console.log(data);
-      
-      setAgents(data.agents || []);
-      loadRecentResearch();
+
+      setPapers(data.papers || []);
+
+      // Select all papers by default
+      setSelectedPapers(
+        (data.papers || []).map((_: any, index: number) => index)
+      );
 
     } catch (error) {
       console.error(error);
-      alert("Failed to start research.");
+      alert("Failed to search papers.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const runResearch = async () => {
+    if (!prompt.trim()) {
+      alert("Please enter a research topic.");
+      return;
+    }
+
+    const chosenPapers = selectedPapers.map((idx) => papers[idx]);
+
+    try {
+      setLoading(true);
+
+      const response = await fetch("http://127.0.0.1:8000/analysis/workspace", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          topic: prompt,
+          papers: chosenPapers,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setSessionId(data.session_id);
+        setAgents(data.agents || []);
+        setAgentResults({});
+        loadRecentResearch();
+      } else {
+        alert("Failed to start research.");
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Error starting research workflow.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const runAgent = async (agentName: string) => {
+    const chosenPapers = selectedPapers.map((idx) => papers[idx]);
+
+    try {
+      const response = await fetch(
+        "http://127.0.0.1:8000/analysis/run-agent",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            session_id: sessionId,
+            topic: prompt,
+            papers: chosenPapers,
+            agent: agentName,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (data.success) {
+        setAgentResults((prev) => ({
+          ...prev,
+          [agentName]: data.result,
+        }));
+
+        setAgents((prev) =>
+          prev.map((a) =>
+            a.agent === agentName
+              ? {
+                  ...a,
+                  status: "Completed",
+                  progress: 100,
+                }
+              : a
+          )
+        );
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Failed to run agent.");
     }
   };
 
@@ -127,10 +221,11 @@ function WorkspacePage() {
             <Button
               variant="hero"
               size="sm"
-              onClick={runResearch}
+              onClick={searchPapers}
               disabled={loading}
             >
-              {loading ? "Starting..." : "Run Research"} <ArrowUp className="h-4 w-4" />
+              {loading ? "Searching..." : "Search Papers"}
+              <Search className="h-4 w-4" />
             </Button>
           </div>
         </div>
@@ -164,6 +259,77 @@ function WorkspacePage() {
         </div>
 
         <div className="mt-6 rounded-2xl glass p-5">
+          <h3 className="font-semibold">
+            Top Research Papers
+          </h3>
+
+          {papers.length === 0 ? (
+            <p className="mt-4 text-sm text-muted-foreground">
+              No papers found. Search a topic to begin.
+            </p>
+          ) : (
+            <div className="mt-4 space-y-4">
+              {papers.map((paper, index) => (
+                <div
+                  key={index}
+                  className="rounded-xl border border-border/40 p-4"
+                >
+                  <div className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={selectedPapers.includes(index)}
+                      onChange={() => {
+                        if (selectedPapers.includes(index)) {
+                          setSelectedPapers(
+                            selectedPapers.filter(i => i !== index)
+                          );
+                        } else {
+                          setSelectedPapers([
+                            ...selectedPapers,
+                            index,
+                          ]);
+                        }
+                      }}
+                    />
+
+                    <div className="flex-1">
+                      <h4 className="font-medium">
+                        {paper.title}
+                      </h4>
+
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {paper.authors.join(", ")}
+                      </p>
+
+                      <p className="text-xs text-muted-foreground">
+                        Published: {paper.published}
+                      </p>
+
+                      <a
+                        href={paper.pdf_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-blue-500 text-sm"
+                      >
+                        View PDF
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              <Button
+                variant="hero"
+                onClick={runResearch}
+                disabled={loading || selectedPapers.length === 0}
+              >
+                {loading ? "Running..." : "Run AI Research"}
+              </Button>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-6 rounded-2xl glass p-5">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold">Active session</h3>
             <span className={`rounded-full px-2 py-0.5 text-xs ${agents.length > 0 ? "bg-[var(--success)]/15 text-[var(--success)]" : "bg-muted text-muted-foreground"}`}>
@@ -194,18 +360,43 @@ function WorkspacePage() {
                         </div>
                         <div className="min-w-0">
                           <div className="text-sm font-medium">{a.agent}</div>
-                          <div className="truncate text-xs text-muted-foreground">Status: {a.status}</div>
+                          <div className={`truncate text-xs ${a.status === "Completed" ? "text-green-500" : "text-muted-foreground"}`}>
+                            Status: {a.status}
+                          </div>
                         </div>
                       </div>
                       <span className={`h-2 w-2 rounded-full ${isIdle ? "bg-muted-foreground" : "bg-[var(--success)] animate-pulse"}`} />
                     </div>
-                    <Progress value={a.progress} className="mt-3" />
+
+                    <Button
+                      className="mt-3"
+                      disabled={a.status === "Completed"}
+                      onClick={() => runAgent(a.agent)}
+                    >
+                      {a.status === "Completed" ? "Completed" : "Run"}
+                    </Button>
+
+                    {agentResults[a.agent] && (
+                      <div className="mt-4 rounded-lg border p-3 text-sm whitespace-pre-wrap">
+                        {agentResults[a.agent]}
+                      </div>
+                    )}
                   </motion.div>
                 );
               })
             )}
           </div>
         </div>
+
+        {summary && (
+          <div className="mt-6 rounded-2xl glass p-5">
+            <h3 className="font-semibold mb-3">Summary</h3>
+
+            <div className="whitespace-pre-wrap text-sm text-muted-foreground">
+              {summary}
+            </div>
+          </div>
+        )}
       </div>
 
       <aside className="space-y-4">
