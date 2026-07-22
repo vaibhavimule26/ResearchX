@@ -53,3 +53,29 @@ Important Rules:
         context=context,
         question=question,
     )
+
+
+# ==========================================================
+# Workspace Novelty Analysis Agent
+# ==========================================================
+
+def run_novelty_agent(topic: str, papers) -> str:
+    """
+    Execute the Novelty Analysis Agent.
+    """
+
+    print("Running Novelty Analysis Agent...")
+
+    context = "\n\n".join(
+        [
+            f"""
+Title: {paper.title}
+Authors: {", ".join(paper.authors)}
+Summary: {paper.summary}
+Published: {paper.published}
+"""
+            for paper in papers
+        ]
+    )
+
+    return analyze_novelty(context)

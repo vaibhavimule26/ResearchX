@@ -53,3 +53,28 @@ Important Rules:
         context=context,
         question=question,
     )
+
+
+# ==========================================================
+# Workspace Literature Survey Agent
+# ==========================================================
+def run_literature_survey_agent(topic: str, papers) -> str:
+    """
+    Execute the Literature Survey Agent.
+    """
+
+    print("Running Literature Survey Agent...")
+
+    context = "\n\n".join(
+        [
+            f"""
+Title: {paper.title}
+Authors: {", ".join(paper.authors)}
+Summary: {paper.summary}
+Published: {paper.published}
+"""
+            for paper in papers
+        ]
+    )
+
+    return generate_literature_survey(context)

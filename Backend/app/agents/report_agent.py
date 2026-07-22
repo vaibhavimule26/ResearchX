@@ -1,16 +1,14 @@
 from app.llm.gemini import generate_answer
 
 
-def generate_final_report(context: str) -> str:
+def generate_ieee_report(context: str) -> str:
     """
     Generate a professional IEEE-style research paper
     directly from the uploaded research paper.
     """
 
     if not context or not context.strip():
-        return (
-            "No research paper context was provided."
-        )
+        return "No research paper context was provided."
 
     question = """
 You are an IEEE Research Paper Writing Expert.
@@ -174,3 +172,32 @@ STRICT RULES
         context=context,
         question=question,
     )
+
+
+# ==========================================================
+# Workspace IEEE Report Agent
+# ==========================================================
+
+def run_ieee_report_agent(topic: str, papers) -> str:
+    """
+    Execute the IEEE Report Agent.
+    """
+
+    print("Running IEEE Report Agent...")
+
+    context = "\n\n".join(
+        [
+            f"""
+Title: {paper.title}
+Authors: {", ".join(paper.authors)}
+Summary: {paper.summary}
+Published: {paper.published}
+"""
+            for paper in papers
+        ]
+    )
+
+    return generate_ieee_report(context)
+
+# Backward compatibility
+generate_final_report = generate_ieee_report

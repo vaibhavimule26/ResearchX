@@ -52,3 +52,28 @@ Important Rules:
         context=context,
         question=question,
     )
+
+
+# ==========================================================
+# Workspace Experiment Agent
+# ==========================================================
+def run_experiment_agent(topic: str, papers) -> str:
+    """
+    Execute the Experiment Recommendation Agent.
+    """
+
+    print("Running Experiment Recommendation Agent...")
+
+    context = "\n\n".join(
+        [
+            f"""
+Title: {paper.title}
+Authors: {", ".join(paper.authors)}
+Summary: {paper.summary}
+Published: {paper.published}
+"""
+            for paper in papers
+        ]
+    )
+
+    return recommend_experiments(context)

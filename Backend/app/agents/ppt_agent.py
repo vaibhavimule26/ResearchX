@@ -183,7 +183,7 @@ Rules:
 3. Maximum 4 bullet points.
 4. Maximum 15 words per bullet.
 5. Do NOT write paragraphs inside Bullet Points.
-6. Speaker Notes should be concise (2-3 sentences).
+6. Speaker Notes should be concise (2–3 sentences).
 7. Use ONLY information from the uploaded paper.
 8. Never invent datasets.
 9. Never invent citations.
@@ -198,3 +198,29 @@ Rules:
         context=context,
         question=question,
     )
+
+
+# ==========================================================
+# Workspace PPT Generator Agent
+# ==========================================================
+
+def run_ppt_agent(topic: str, papers) -> str:
+    """
+    Execute the PPT Generator Agent.
+    """
+
+    print("Running PPT Generator Agent...")
+
+    context = "\n\n".join(
+        [
+            f"""
+Title: {paper.title}
+Authors: {", ".join(paper.authors)}
+Summary: {paper.summary}
+Published: {paper.published}
+"""
+            for paper in papers
+        ]
+    )
+
+    return generate_presentation(context)

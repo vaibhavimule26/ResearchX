@@ -22,6 +22,34 @@ from app.agents.research_gap import (
     find_research_gaps,
     run_research_gap_agent,
 )
+from app.agents.dataset_agent import (
+    recommend_datasets,
+    run_dataset_agent,
+)
+from app.agents.experiment_agent import (
+    recommend_experiments,
+    run_experiment_agent,
+)
+from app.agents.literature_agent import (
+    generate_literature_survey,
+    run_literature_survey_agent,
+)
+from app.agents.novelty_agent import (
+    analyze_novelty,
+    run_novelty_agent,
+)
+from app.agents.comparison_agent import (
+    compare_papers,
+    run_comparison_agent,
+)
+from app.agents.ppt_agent import (
+    generate_presentation,
+    run_ppt_agent,
+)
+from app.agents.report_agent import (
+    generate_ieee_report,
+    run_ieee_report_agent,
+)
 from app.agents.workspace_coordinator import run_workspace
 from app.services.arxiv_service import search_papers
 
@@ -168,12 +196,25 @@ ANALYSIS_QUERIES = {
 ANALYSIS_HANDLERS = {
     "summary": summarize_paper,
     "gaps": find_research_gaps,
+    "datasets": recommend_datasets,
+    "experiments": recommend_experiments,
+    "literature": generate_literature_survey,
+    "novelty": analyze_novelty,
+    "ppt": generate_presentation,
+    "report": generate_ieee_report,
 }
 
 
 WORKSPACE_AGENT_HANDLERS = {
     "Summary": run_summary_agent,
     "Research Gap": run_research_gap_agent,
+    "Dataset Recommendation": run_dataset_agent,
+    "Experiment Recommendation": run_experiment_agent,
+    "Literature Survey": run_literature_survey_agent,
+    "Novelty Analysis": run_novelty_agent,
+    "Comparison": run_comparison_agent,
+    "IEEE Report": run_ieee_report_agent,
+    "PPT Generator": run_ppt_agent,
 }
 
 

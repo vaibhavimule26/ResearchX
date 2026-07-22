@@ -74,3 +74,28 @@ Important rules:
         context=context,
         question=question,
     )
+    
+    # ==========================================================
+# Workspace Dataset Agent
+# ==========================================================
+def run_dataset_agent(topic: str, papers) -> str:
+    """
+    Execute the Dataset Recommendation Agent
+    for all selected papers.
+    """
+
+    print("Running Dataset Recommendation Agent...")
+
+    context = "\n\n".join(
+        [
+            f"""
+Title: {paper.title}
+Authors: {", ".join(paper.authors)}
+Summary: {paper.summary}
+Published: {paper.published}
+"""
+            for paper in papers
+        ]
+    )
+
+    return recommend_datasets(context)

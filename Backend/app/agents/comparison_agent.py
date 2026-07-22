@@ -1,68 +1,93 @@
 from app.llm.gemini import generate_answer
 
 
-def compare_papers(context):
+def compare_papers(context: str) -> str:
+    """
+    Compare multiple selected research papers.
+    """
 
-    prompt = f"""
-You are an expert AI Research Assistant.
+    if not context or not context.strip():
+        return (
+            "Unable to compare papers because "
+            "no research paper context was provided."
+        )
 
-You have been provided with multiple uploaded research papers.
+    question = """
+Analyze the provided research papers as an expert research reviewer.
 
-Your task is to compare them.
+Generate a detailed Research Paper Comparison Report with exactly these sections:
 
-Generate a detailed comparison using the following format.
+1. Paper Titles
+- List all selected paper titles.
 
-# Research Paper Comparison
+2. Main Objectives
+- Compare the research objectives of each paper.
 
-## 1. Paper Titles
+3. Methodology
+- Compare the methodologies used.
 
-List all uploaded paper titles.
+4. Datasets Used
+- Compare the datasets or benchmarks used.
+- If a paper does not mention datasets, clearly state that.
 
-## 2. Main Objectives
+5. Models / Algorithms
+- Compare the proposed models, architectures, or algorithms.
 
-Compare the objective of each paper.
+6. Key Contributions
+- Compare the major contributions of each paper.
 
-## 3. Methodology
+7. Experimental Results
+- Compare the reported experimental findings.
 
-Compare the methodologies.
+8. Strengths
+- Highlight the strengths of each paper.
 
-## 4. Datasets Used
+9. Weaknesses
+- Highlight the limitations of each paper.
 
-Compare the datasets.
+10. Future Work
+- Compare the future research directions.
 
-## 5. Models / Algorithms
+11. Final Comparison Summary
+- Summarize the similarities and differences.
+- Identify which paper appears strongest for its intended objective.
 
-Compare the proposed models or algorithms.
-
-## 6. Key Contributions
-
-Compare the contributions.
-
-## 7. Experimental Results
-
-Compare the experimental findings.
-
-## 8. Strengths
-
-Mention strengths of each paper.
-
-## 9. Weaknesses
-
-Mention weaknesses of each paper.
-
-## 10. Future Work
-
-Compare future work.
-
-## 11. Final Conclusion
-
-Summarize similarities and differences.
-
-If only one paper is available, clearly state that comparison requires at least two uploaded research papers.
-
-Research Papers:
-
-{context}
+Important Rules:
+- Base the comparison only on the provided research paper context.
+- Do not invent datasets, experiments, results, or citations.
+- If only one paper is available, clearly state that meaningful comparison requires at least two papers.
+- If information is missing, clearly state that.
+- Use professional academic language.
+- Give a detailed structured answer.
 """
 
-    return generate_answer(prompt, "")
+    return generate_answer(
+        context=context,
+        question=question,
+    )
+
+
+# ==========================================================
+# Workspace Comparison Agent
+# ==========================================================
+
+def run_comparison_agent(topic: str, papers) -> str:
+    """
+    Execute the Comparison Agent.
+    """
+
+    print("Running Comparison Agent...")
+
+    context = "\n\n".join(
+        [
+            f"""
+Title: {paper.title}
+Authors: {", ".join(paper.authors)}
+Summary: {paper.summary}
+Published: {paper.published}
+"""
+            for paper in papers
+        ]
+    )
+
+    return compare_papers(context)
