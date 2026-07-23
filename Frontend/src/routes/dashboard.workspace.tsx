@@ -1,9 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { motion } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
-  Search, Upload, FileSpreadsheet, Presentation, Sparkles, BookOpen,
-  Paperclip, Bot, FileText, Lightbulb, HelpCircle
+  Search,
+  Sparkles,
+  Paperclip,
+  FileText,
+  Lightbulb,
+  HelpCircle,
+  Bot,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -13,18 +18,9 @@ export const Route = createFileRoute("/dashboard/workspace")({
   component: WorkspacePage,
 });
 
-const QUICK = [
-  { icon: Search, label: "Search Papers" },
-  { icon: Upload, label: "Upload PDF" },
-  { icon: Sparkles, label: "Analyze Topic" },
-  { icon: BookOpen, label: "Literature Survey" },
-  { icon: FileSpreadsheet, label: "IEEE Report" },
-  { icon: Presentation, label: "Generate PPT" },
-];
-
 const AGENT_ICON_MAP: Record<string, any> = {
   "Paper Retrieval": Search,
-  "Summary": FileText,
+  Summary: FileText,
   "Gap Analysis": Lightbulb,
 };
 
@@ -52,6 +48,8 @@ function WorkspacePage() {
 
   const [sessionId, setSessionId] = useState("");
   const [agentResults, setAgentResults] = useState<Record<string, string>>({});
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const searchPapers = async () => {
     if (!prompt.trim()) {
@@ -83,7 +81,6 @@ function WorkspacePage() {
       setSelectedPapers(
         (data.papers || []).map((_: any, index: number) => index)
       );
-
     } catch (error) {
       console.error(error);
       alert("Failed to search papers.");
@@ -129,6 +126,39 @@ function WorkspacePage() {
       alert("Error starting research workflow.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAttach = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const response = await fetch("http://127.0.0.1:8000/upload/pdf", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        alert("PDF uploaded successfully.");
+      } else {
+        alert("Upload failed.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Upload failed.");
     }
   };
 
@@ -180,9 +210,7 @@ function WorkspacePage() {
 
   const loadRecentResearch = async () => {
     try {
-      const response = await fetch(
-        "http://127.0.0.1:8000/analysis/recent"
-      );
+      const response = await fetch("http://127.0.0.1:8000/analysis/recent");
       const data = await response.json();
       setRecentResearch(data);
     } catch (error) {
@@ -198,10 +226,15 @@ function WorkspacePage() {
     <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
       <div className="min-w-0">
         <div className="mb-6">
-          <div className="text-xs uppercase tracking-wider text-muted-foreground">AI Workspace</div>
-          <h1 className="mt-1 font-display text-3xl font-bold">What do you want to research today?</h1>
+          <div className="text-xs uppercase tracking-wider text-muted-foreground">
+            AI Workspace
+          </div>
+          <h1 className="mt-1 font-display text-3xl font-bold">
+            What do you want to research today?
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Describe your topic. The coordinator will dispatch agents to handle the rest.
+            Describe your topic. The coordinator will dispatch agents to handle
+            the rest.
           </p>
         </div>
 
@@ -215,8 +248,18 @@ function WorkspacePage() {
           />
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap gap-2">
-              <Button variant="glass" size="sm"><Paperclip className="h-4 w-4" /> Attach</Button>
-              <Button variant="glass" size="sm"><Bot className="h-4 w-4" /> Choose agents</Button>
+              <input
+                type="file"
+                accept=".pdf"
+                ref={fileInputRef}
+                className="hidden"
+                onChange={handleFileChange}
+              />
+
+              <Button variant="glass" size="sm" onClick={handleAttach}>
+                <Paperclip className="h-4 w-4" />
+                Attach PDF
+              </Button>
             </div>
             <Button
               variant="hero"
@@ -230,18 +273,6 @@ function WorkspacePage() {
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-          {QUICK.map((q) => (
-            <button
-              key={q.label}
-              className="group flex items-center gap-2 rounded-xl border border-border/60 bg-secondary/40 px-3 py-2.5 text-xs hover:bg-accent"
-            >
-              <q.icon className="h-4 w-4 text-[var(--electric)] transition-transform group-hover:scale-110" />
-              <span className="truncate">{q.label}</span>
-            </button>
-          ))}
-        </div>
-
         <div className="mt-6 rounded-2xl glass p-5">
           <h3 className="font-semibold">Suggested research starters</h3>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -251,7 +282,11 @@ function WorkspacePage() {
               "Gaps in evaluation of agentic frameworks",
               "Dataset recommendations for medical NER (2024)",
             ].map((s) => (
-              <button key={s} className="rounded-xl border border-border/40 bg-secondary/30 p-3 text-left text-sm hover:bg-accent">
+              <button
+                key={s}
+                onClick={() => setPrompt(s)}
+                className="rounded-xl border border-border/40 bg-secondary/30 p-3 text-left text-sm hover:bg-accent"
+              >
                 {s}
               </button>
             ))}
@@ -259,14 +294,22 @@ function WorkspacePage() {
         </div>
 
         <div className="mt-6 rounded-2xl glass p-5">
-          <h3 className="font-semibold">
-            Top Research Papers
-          </h3>
+          <h3 className="font-semibold">Top Research Papers</h3>
 
           {papers.length === 0 ? (
-            <p className="mt-4 text-sm text-muted-foreground">
-              No papers found. Search a topic to begin.
-            </p>
+            <div className="mt-6 flex flex-col items-center justify-center rounded-xl border border-dashed border-border/40 py-12 text-center">
+              <Search className="mb-4 h-10 w-10 text-muted-foreground" />
+
+              <h4 className="text-lg font-semibold">
+                No Research Papers Yet
+              </h4>
+
+              <p className="mt-2 max-w-md text-sm text-muted-foreground">
+                Enter a research topic above and click
+                <span className="font-medium"> Search Papers </span>
+                to discover relevant research papers.
+              </p>
+            </div>
           ) : (
             <div className="mt-4 space-y-4">
               {papers.map((paper, index) => (
@@ -279,40 +322,35 @@ function WorkspacePage() {
                       type="checkbox"
                       checked={selectedPapers.includes(index)}
                       onChange={() => {
-                        if (selectedPapers.includes(index)) {
-                          setSelectedPapers(
-                            selectedPapers.filter(i => i !== index)
-                          );
-                        } else {
-                          setSelectedPapers([
-                            ...selectedPapers,
-                            index,
-                          ]);
-                        }
+                        setSelectedPapers((prev) =>
+                          prev.includes(index)
+                            ? prev.filter((i) => i !== index)
+                            : [...prev, index]
+                        );
                       }}
                     />
 
                     <div className="flex-1">
-                      <h4 className="font-medium">
-                        {paper.title}
-                      </h4>
+                      <h4 className="font-medium">{paper.title}</h4>
 
                       <p className="text-xs text-muted-foreground mt-1">
-                        {paper.authors.join(", ")}
+                        {paper.authors?.join(", ") || "Unknown Authors"}
                       </p>
 
                       <p className="text-xs text-muted-foreground">
-                        Published: {paper.published}
+                        Published: {paper.published || "N/A"}
                       </p>
 
-                      <a
-                        href={paper.pdf_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-blue-500 text-sm"
-                      >
-                        View PDF
-                      </a>
+                      {paper.pdf_url && (
+                        <a
+                          href={paper.pdf_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-blue-500 text-sm"
+                        >
+                          View PDF
+                        </a>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -332,15 +370,31 @@ function WorkspacePage() {
         <div className="mt-6 rounded-2xl glass p-5">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold">Active session</h3>
-            <span className={`rounded-full px-2 py-0.5 text-xs ${agents.length > 0 ? "bg-[var(--success)]/15 text-[var(--success)]" : "bg-muted text-muted-foreground"}`}>
+            <span
+              className={`rounded-full px-2 py-0.5 text-xs ${
+                agents.length > 0
+                  ? "bg-[var(--success)]/15 text-[var(--success)]"
+                  : "bg-muted text-muted-foreground"
+              }`}
+            >
               {agents.length > 0 ? "Running" : "Idle"}
             </span>
           </div>
           <div className="mt-4 space-y-3">
             {agents.length === 0 ? (
-              <p className="text-sm text-muted-foreground italic text-center py-4">
-                No active session running. Enter a topic above to dispatch research agents.
-              </p>
+              <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/40 py-12 text-center">
+                <Bot className="mb-4 h-10 w-10 text-muted-foreground" />
+
+                <h4 className="text-lg font-semibold">
+                  No Active Research Session
+                </h4>
+
+                <p className="mt-2 max-w-md text-sm text-muted-foreground">
+                  Search research papers and click
+                  <span className="font-medium"> Run AI Research </span>
+                  to start your workspace session.
+                </p>
+              </div>
             ) : (
               agents.map((a) => {
                 const AgentIcon = AGENT_ICON_MAP[a.agent] || HelpCircle;
@@ -355,17 +409,39 @@ function WorkspacePage() {
                   >
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className={`grid h-9 w-9 place-items-center rounded-xl ${isIdle ? "bg-muted" : "gradient-primary-bg"}`}>
-                          <AgentIcon className={`h-4 w-4 ${isIdle ? "text-muted-foreground" : "text-primary-foreground"}`} />
+                        <div
+                          className={`grid h-9 w-9 place-items-center rounded-xl ${
+                            isIdle ? "bg-muted" : "gradient-primary-bg"
+                          }`}
+                        >
+                          <AgentIcon
+                            className={`h-4 w-4 ${
+                              isIdle
+                                ? "text-muted-foreground"
+                                : "text-primary-foreground"
+                            }`}
+                          />
                         </div>
                         <div className="min-w-0">
                           <div className="text-sm font-medium">{a.agent}</div>
-                          <div className={`truncate text-xs ${a.status === "Completed" ? "text-green-500" : "text-muted-foreground"}`}>
+                          <div
+                            className={`truncate text-xs ${
+                              a.status === "Completed"
+                                ? "text-green-500"
+                                : "text-muted-foreground"
+                            }`}
+                          >
                             Status: {a.status}
                           </div>
                         </div>
                       </div>
-                      <span className={`h-2 w-2 rounded-full ${isIdle ? "bg-muted-foreground" : "bg-[var(--success)] animate-pulse"}`} />
+                      <span
+                        className={`h-2 w-2 rounded-full ${
+                          isIdle
+                            ? "bg-muted-foreground"
+                            : "bg-[var(--success)] animate-pulse"
+                        }`}
+                      />
                     </div>
 
                     <Button
@@ -403,11 +479,16 @@ function WorkspacePage() {
         <div className="rounded-2xl glass p-5">
           <h3 className="font-semibold">Recent Research</h3>
           {recentResearch.length === 0 ? (
-            <p className="mt-3 text-xs text-muted-foreground italic">No past sessions found.</p>
+            <p className="mt-3 text-xs text-muted-foreground italic">
+              No past sessions found.
+            </p>
           ) : (
             <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
               {recentResearch.map((r: any, idx: number) => (
-                <li key={r.session_id || idx} className="truncate hover:text-foreground cursor-pointer">
+                <li
+                  key={r.session_id || idx}
+                  className="truncate hover:text-foreground cursor-pointer"
+                >
                   {r.topic}
                 </li>
               ))}
@@ -418,7 +499,10 @@ function WorkspacePage() {
           <h3 className="font-semibold">Saved Papers</h3>
           <ul className="mt-3 space-y-3 text-sm">
             {SAVED.map((p) => (
-              <li key={p.t} className="rounded-xl border border-border/40 bg-secondary/30 p-3">
+              <li
+                key={p.t}
+                className="rounded-xl border border-border/40 bg-secondary/30 p-3"
+              >
                 <div className="truncate font-medium">{p.t}</div>
                 <div className="text-xs text-muted-foreground">{p.a}</div>
               </li>
@@ -430,7 +514,9 @@ function WorkspacePage() {
           <ul className="mt-4 space-y-3">
             {TIMELINE.map((t) => (
               <li key={t.text} className="flex gap-3 text-sm">
-                <span className="text-xs text-muted-foreground w-10 shrink-0">{t.time}</span>
+                <span className="text-xs text-muted-foreground w-10 shrink-0">
+                  {t.time}
+                </span>
                 <span className="text-muted-foreground">{t.text}</span>
               </li>
             ))}
