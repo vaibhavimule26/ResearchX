@@ -24,19 +24,6 @@ const AGENT_ICON_MAP: Record<string, any> = {
   "Gap Analysis": Lightbulb,
 };
 
-const SAVED = [
-  { t: "Attention Is All You Need", a: "Vaswani et al." },
-  { t: "LLaMA: Open and Efficient Foundation Models", a: "Touvron et al." },
-  { t: "Toolformer", a: "Schick et al." },
-];
-
-const TIMELINE = [
-  { time: "Now", text: "Coordinator agent dispatched 4 subtasks" },
-  { time: "1m", text: "Paper Retrieval found 24 candidates" },
-  { time: "3m", text: "PDF Analysis started on top-3 papers" },
-  { time: "5m", text: "Summary agent queued" },
-];
-
 function WorkspacePage() {
   const [prompt, setPrompt] = useState("");
   const [agents, setAgents] = useState<any[]>([]);
@@ -47,6 +34,7 @@ function WorkspacePage() {
   const [summary, setSummary] = useState("");
 
   const [sessionId, setSessionId] = useState("");
+  const [activeSessionId, setActiveSessionId] = useState("");
   const [agentResults, setAgentResults] = useState<Record<string, string>>({});
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -115,6 +103,7 @@ function WorkspacePage() {
 
       if (data.success) {
         setSessionId(data.session_id);
+        setActiveSessionId(data.session_id);
         setAgents(data.agents || []);
         setAgentResults({});
         loadRecentResearch();
@@ -215,6 +204,39 @@ function WorkspacePage() {
       setRecentResearch(data);
     } catch (error) {
       console.error(error);
+    }
+  };
+
+  const loadWorkspace = async (sessionId: string) => {
+    try {
+      setLoading(true);
+
+      const response = await fetch(
+        `http://127.0.0.1:8000/analysis/workspace/${sessionId}`
+      );
+
+      const data = await response.json();
+
+      if (!data.success) {
+        alert("Failed to restore workspace.");
+        return;
+      }
+
+      setPrompt(data.topic);
+      setPapers(data.papers || []);
+
+      setSelectedPapers(
+        (data.papers || []).map((_: any, index: number) => index)
+      );
+
+      setSessionId(data.session_id);
+      setAgents(data.agents || []);
+      setAgentResults(data.agent_results || {});
+    } catch (err) {
+      console.error(err);
+      alert("Failed to restore workspace.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -487,40 +509,14 @@ function WorkspacePage() {
               {recentResearch.map((r: any, idx: number) => (
                 <li
                   key={r.session_id || idx}
-                  className="truncate hover:text-foreground cursor-pointer"
+                  onClick={() => loadWorkspace(r.session_id)}
+                  className="truncate rounded-lg p-2 cursor-pointer transition-colors hover:bg-accent hover:text-foreground"
                 >
                   {r.topic}
                 </li>
               ))}
             </ul>
           )}
-        </div>
-        <div className="rounded-2xl glass p-5">
-          <h3 className="font-semibold">Saved Papers</h3>
-          <ul className="mt-3 space-y-3 text-sm">
-            {SAVED.map((p) => (
-              <li
-                key={p.t}
-                className="rounded-xl border border-border/40 bg-secondary/30 p-3"
-              >
-                <div className="truncate font-medium">{p.t}</div>
-                <div className="text-xs text-muted-foreground">{p.a}</div>
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div className="rounded-2xl glass p-5">
-          <h3 className="font-semibold">Activity Timeline</h3>
-          <ul className="mt-4 space-y-3">
-            {TIMELINE.map((t) => (
-              <li key={t.text} className="flex gap-3 text-sm">
-                <span className="text-xs text-muted-foreground w-10 shrink-0">
-                  {t.time}
-                </span>
-                <span className="text-muted-foreground">{t.text}</span>
-              </li>
-            ))}
-          </ul>
         </div>
       </aside>
     </div>

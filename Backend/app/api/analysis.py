@@ -370,6 +370,55 @@ def get_recent_research():
 
 
 # ==========================================================
+# Restore Workspace Session
+# ==========================================================
+@router.get("/workspace/{session_id}")
+def get_workspace(session_id: str):
+    try:
+        session = research_sessions_collection.find_one(
+            {"session_id": session_id},
+            {"_id": 0},
+        )
+
+        if not session:
+            raise HTTPException(
+                status_code=404,
+                detail="Workspace not found.",
+            )
+
+        outputs = list(
+            agent_outputs_collection.find(
+                {"session_id": session_id},
+                {"_id": 0},
+            )
+        )
+
+        agent_results = {
+            output["agent"]: output["result"]
+            for output in outputs
+        }
+
+        return {
+            "success": True,
+            "session_id": session["session_id"],
+            "topic": session["topic"],
+            "papers": session.get("papers", []),
+            "agents": session.get("agents", []),
+            "agent_results": agent_results,
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=str(e),
+        )
+
+
+# ==========================================================
 # Run Single Agent Endpoint
 # ==========================================================
 @router.post(

@@ -51,6 +51,19 @@ def run_workspace(topic: str, session_id: str, papers):
 
     print("Creating Research Session...")
 
+    # Papers data for session restore
+    paper_data = [
+        {
+            "title": paper.title,
+            "authors": paper.authors,
+            "summary": paper.summary,
+            "published": paper.published,
+            "pdf_url": paper.pdf_url,
+        }
+        for paper in papers
+    ]
+
+    # Save complete research session
     research_sessions_collection.insert_one(
         {
             "session_id": session_id,
@@ -58,6 +71,7 @@ def run_workspace(topic: str, session_id: str, papers):
             "status": "Created",
             "created_at": datetime.utcnow(),
             "agents": agents,
+            "papers": paper_data,
         }
     )
 
