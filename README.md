@@ -6,3 +6,9 @@ An AI-powered Multi-Agent Research Assistant built using React, FastAPI, Gemini,
 
 ## Documentation
 - Minor documentation review.
+
+## Documentation
+
+- Improved project documentation structure for better readability.
+- Reviewed the project architecture and workflow documentation.
+- Minor formatting and documentation refinements.
