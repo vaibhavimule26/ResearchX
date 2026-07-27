@@ -12,3 +12,19 @@ An AI-powered Multi-Agent Research Assistant built using React, FastAPI, Gemini,
 - Improved project documentation structure for better readability.
 - Reviewed the project architecture and workflow documentation.
 - Minor formatting and documentation refinements.
+
+## 🚀 Upcoming ResearchX v2 Enhancements
+
+Based on project review feedback, the next phase of ResearchX will focus on improving research quality, explainability, and real-world usability.
+
+### Planned Enhancements
+
+- Integrate LangGraph for stateful multi-agent orchestration.
+- Improve research paper retrieval using multiple academic sources (Semantic Scholar, OpenAlex, Crossref, arXiv).
+- Develop a custom Paper Ranking Agent based on semantic similarity, citation count, publication year, venue quality, and relevance score.
+- Add a Verification Agent to validate generated responses against retrieved research papers.
+- Implement a Citation Agent for evidence-backed responses with proper source attribution.
+- Introduce a Plagiarism Reduction Agent for producing more original academic content.
+- Add Research Quality Evaluation including novelty, methodology assessment, dataset quality, and future work suggestions.
+- Improve the RAG pipeline for higher retrieval accuracy and lower hallucination.
+- Transform ResearchX into a production-ready AI-powered research assistant for literature review and academic writing.
