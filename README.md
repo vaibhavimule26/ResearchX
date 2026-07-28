@@ -28,3 +28,7 @@ Based on project review feedback, the next phase of ResearchX will focus on impr
 - Add Research Quality Evaluation including novelty, methodology assessment, dataset quality, and future work suggestions.
 - Improve the RAG pipeline for higher retrieval accuracy and lower hallucination.
 - Transform ResearchX into a production-ready AI-powered research assistant for literature review and academic writing.
+
+### 📌 Development Note (July 2026)
+
+ResearchX is entering its next development phase with a focus on improving research quality and real-world usability. Upcoming work includes enhancing the multi-agent workflow, strengthening research paper retrieval, improving RAG accuracy, and making AI-generated responses more reliable through verification and citation-aware generation.
