@@ -32,3 +32,33 @@ Based on project review feedback, the next phase of ResearchX will focus on impr
 ### 📌 Development Note (July 2026)
 
 ResearchX is entering its next development phase with a focus on improving research quality and real-world usability. Upcoming work includes enhancing the multi-agent workflow, strengthening research paper retrieval, improving RAG accuracy, and making AI-generated responses more reliable through verification and citation-aware generation.
+
+
+## Latest Update (Paper Retrieval Enhancement)
+
+ResearchX now supports multi-source research paper retrieval.
+
+### Added
+- Integrated Semantic Scholar API
+- Integrated OpenAlex API
+- Retained arXiv integration
+- Created a centralized Retrieval Service to aggregate papers from multiple sources
+
+### Current Retrieval Pipeline
+
+Topic
+↓
+Semantic Scholar
++
+OpenAlex
++
+arXiv
+↓
+Combined Results
+
+### Upcoming Improvements
+- Duplicate paper removal
+- Intelligent paper ranking
+- Citation-based scoring
+- Semantic relevance scoring
+- Best paper recommendation

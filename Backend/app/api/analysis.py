@@ -51,8 +51,7 @@ from app.agents.report_agent import (
     run_ieee_report_agent,
 )
 from app.agents.workspace_coordinator import run_workspace
-from app.services.arxiv_service import search_papers
-
+from app.services.retrieval_service import search_papers
 
 router = APIRouter(
     prefix="/analysis",
