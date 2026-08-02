@@ -62,3 +62,5 @@ Combined Results
 - Citation-based scoring
 - Semantic relevance scoring
 - Best paper recommendation
+
+integrate multi-source research paper retrieval
