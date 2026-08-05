@@ -64,3 +64,12 @@ Combined Results
 - Best paper recommendation
 
 integrate multi-source research paper retrieval
+
+## Phase 1 Roadmap (Upcoming)
+
+- Multi-source paper retrieval
+- Intelligent paper ranking
+- Duplicate paper removal
+- Explainable Top-10 paper selection
+
+This phase focuses on improving retrieval quality before implementing advanced multi-agent orchestration.
