@@ -1,6 +1,24 @@
 import os
-
+from dotenv import load_dotenv
 import google.generativeai as genai
+
+
+# ==========================
+# Load Environment Variables
+# ==========================
+BASE_DIR = os.path.dirname(
+    os.path.abspath(__file__)
+)
+ENV_PATH = os.path.join(
+    BASE_DIR,
+    "..",
+    "..",
+    ".env"
+)
+load_dotenv(
+    dotenv_path=ENV_PATH,
+    override=True,
+)
 
 
 # ==========================
@@ -10,7 +28,7 @@ api_key = os.getenv("GEMINI_API_KEY")
 
 if not api_key:
     raise ValueError(
-        "GEMINI_API_KEY is not set in environment variables"
+        f"GEMINI_API_KEY not found.\nExpected .env at: {ENV_PATH}"
     )
 
 genai.configure(

@@ -27,10 +27,9 @@ def search_openalex(topic, limit=20):
             if author.get("author"):
                 authors.append(author["author"].get("display_name", ""))
 
-        pdf_url = ""
-
-        if paper.get("primary_location"):
-            pdf_url = paper["primary_location"].get("pdf_url") or ""
+        primary_location = paper.get("primary_location") or {}
+        source = primary_location.get("source") or {}
+        pdf_url = primary_location.get("pdf_url") or ""
 
         papers.append(
             {
@@ -39,11 +38,7 @@ def search_openalex(topic, limit=20):
                 "summary": paper.get("abstract_inverted_index", {}),
                 "published": str(paper.get("publication_year", "")),
                 "citation_count": paper.get("cited_by_count", 0),
-                "venue": (
-                    paper.get("primary_location", {})
-                    .get("source", {})
-                    .get("display_name", "")
-                ),
+                "venue": source.get("display_name", ""),
                 "doi": paper.get("doi", ""),
                 "pdf_url": pdf_url,
                 "source": "OpenAlex",

@@ -39,6 +39,8 @@ from app.api.report import router as report_router
 from app.api.ppt import router as ppt_router
 from app.api.presentation import router as presentation_router
 from app.api.dashboard import router as dashboard_router
+from app.api.paper_search import router as paper_search_router
+
 # ==========================================================
 # Create FastAPI Application
 # ==========================================================
@@ -144,3 +146,11 @@ app.include_router(
 )
 
 app.include_router(dashboard_router)
+
+# ==========================================================
+# Paper Search Routes
+# ==========================================================
+app.include_router(
+    paper_search_router,
+    prefix="/api"
+)

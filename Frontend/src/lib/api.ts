@@ -1,7 +1,7 @@
 const API_BASE_URL =
   import.meta.env.VITE_API_URL ??
   "http://127.0.0.1:8000";
-  
+
 async function handleResponse(response: Response) {
   const data = await response.json();
 
@@ -213,7 +213,7 @@ export async function getSessions() {
 // ==========================
 // Structured AI Analysis Types
 // ==========================
-  export type AnalysisType =
+export type AnalysisType =
   | "summary"
   | "gaps"
   | "datasets"
@@ -362,4 +362,34 @@ export async function searchDashboard(
   console.log("API Returned:", data);
 
   return data;
+}
+
+// ==========================
+// Research Papers Search
+// ==========================
+
+export interface ResearchPaper {
+  title: string;
+  authors: string[];
+  summary: string;
+  published: string;
+  citation_count: number;
+  venue: string;
+  source: string;
+  researchx_score: number;
+  ranking_reason: any;
+}
+
+export async function searchResearchPapers(
+  query: string
+): Promise<{
+  success: boolean;
+  results: ResearchPaper[];
+}> {
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/search?query=${encodeURIComponent(query)}`
+  );
+
+  return handleResponse(response);
 }

@@ -4,7 +4,7 @@ import { Search, Filter, Bookmark, Download, Sparkles, FileText } from "lucide-r
 import { PageHeader } from "@/components/dashboard/topbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { searchDashboard, runAnalysis } from "@/lib/api";
+import { searchResearchPapers, runAnalysis } from "@/lib/api";
 import { useSearch, useNavigate } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/dashboard/papers")({
@@ -18,12 +18,12 @@ export const Route = createFileRoute("/dashboard/papers")({
 });
 
 const PAPERS = [
-  { title: "Attention Is All You Need", authors: "Ashish Vaswani, Noam Shazeer, et al.", year: 2017, venue: "NeurIPS", citations: 121340, abstract: "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks. We propose a new simple architecture, the Transformer, based solely on attention mechanisms…", tags: ["Transformer", "Attention", "NLP"] },
-  { title: "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks", authors: "Patrick Lewis et al.", year: 2020, venue: "NeurIPS", citations: 8421, abstract: "We introduce RAG models which combine pre-trained parametric and non-parametric memory for language generation…", tags: ["RAG", "Retrieval", "Generation"] },
-  { title: "LLaMA: Open and Efficient Foundation Language Models", authors: "Hugo Touvron et al.", year: 2023, venue: "arXiv", citations: 5210, abstract: "We introduce LLaMA, a collection of foundation language models ranging from 7B to 65B parameters trained on trillions of tokens…", tags: ["LLM", "Open Source"] },
-  { title: "Toolformer: Language Models Can Teach Themselves to Use Tools", authors: "Timo Schick et al.", year: 2023, venue: "NeurIPS", citations: 1845, abstract: "We introduce Toolformer, a model trained to decide which APIs to call, when to call them, what arguments to pass…", tags: ["Tools", "Agents"] },
-  { title: "Chain-of-Thought Prompting Elicits Reasoning in Large Language Models", authors: "Jason Wei et al.", year: 2022, venue: "NeurIPS", citations: 9821, abstract: "We explore how generating a chain of thought significantly improves the ability of large language models to perform reasoning…", tags: ["Reasoning", "Prompting"] },
-  { title: "Mistral 7B", authors: "Mistral AI Team", year: 2023, venue: "arXiv", citations: 1320, abstract: "Mistral 7B leverages grouped-query attention and sliding window attention to achieve strong performance at modest scale…", tags: ["LLM", "Efficient"] },
+  { title: "Attention Is All You Need", authors: ["Ashish Vaswani", "Noam Shazeer", "et al."], published: "2017", venue: "NeurIPS", citation_count: 121340, summary: "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks. We propose a new simple architecture, the Transformer, based solely on attention mechanisms…", tags: ["Transformer", "Attention", "NLP"] },
+  { title: "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks", authors: ["Patrick Lewis", "et al."], published: "2020", venue: "NeurIPS", citation_count: 8421, summary: "We introduce RAG models which combine pre-trained parametric and non-parametric memory for language generation…", tags: ["RAG", "Retrieval", "Generation"] },
+  { title: "LLaMA: Open and Efficient Foundation Language Models", authors: ["Hugo Touvron", "et al."], published: "2023", venue: "arXiv", citation_count: 5210, summary: "We introduce LLaMA, a collection of foundation language models ranging from 7B to 65B parameters trained on trillions of tokens…", tags: ["LLM", "Open Source"] },
+  { title: "Toolformer: Language Models Can Teach Themselves to Use Tools", authors: ["Timo Schick", "et al."], published: "2023", venue: "NeurIPS", citation_count: 1845, summary: "We introduce Toolformer, a model trained to decide which APIs to call, when to call them, what arguments to pass…", tags: ["Tools", "Agents"] },
+  { title: "Chain-of-Thought Prompting Elicits Reasoning in Large Language Models", authors: ["Jason Wei", "et al."], published: "2022", venue: "NeurIPS", citation_count: 9821, summary: "We explore how generating a chain of thought significantly improves the ability of large language models to perform reasoning…", tags: ["Reasoning", "Prompting"] },
+  { title: "Mistral 7B", authors: ["Mistral AI Team"], published: "2023", venue: "arXiv", citation_count: 1320, summary: "Mistral 7B leverages grouped-query attention and sliding window attention to achieve strong performance at modest scale…", tags: ["LLM", "Efficient"] },
 ];
 
 function PaperSearch() {
@@ -48,7 +48,8 @@ function PaperSearch() {
 
     async function loadPapers() {
       try {
-        const data = await searchDashboard(q);
+        const data = await searchResearchPapers(q);
+        console.log("API Response:", data);
         setPapers(data.results);
       } catch (err) {
         console.error(err);
@@ -70,17 +71,12 @@ function PaperSearch() {
       });
     } catch (err) {
       console.error(err);
-    } {
+    } finally {
       setLoadingPaper(null);
     }
   };
 
-  const filteredPapers =
-    papers.length > 0
-      ? papers
-      : PAPERS.filter((paper) =>
-          paper.title.toLowerCase().includes(q.toLowerCase())
-        );
+  const filteredPapers = papers;
 
   return (
     <div>
@@ -182,7 +178,7 @@ function PaperSearch() {
                   <p className="mt-1 text-xs text-muted-foreground">
                     {"uploaded_at" in p
                       ? `Uploaded: ${p.uploaded_at}`
-                      : `${p.authors} · ${p.venue} ${p.year}`}
+                      : `${Array.isArray(p.authors) ? p.authors.join(", ") : p.authors} · ${p.venue} · ${p.published}`}
                   </p>
                 </div>
 
@@ -192,9 +188,11 @@ function PaperSearch() {
               </div>
 
               <p className="mt-3 text-sm text-muted-foreground">
-                {"abstract" in p
-                  ? p.abstract
-                  : "Uploaded research paper"}
+                {p.summary
+                  ? typeof p.summary === "string"
+                    ? p.summary
+                    : "Abstract available"
+                  : "No abstract available"}
               </p>
 
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -226,21 +224,19 @@ function PaperSearch() {
                     {loadingPaper === p.title ? "Generating..." : "Summarize"}
                   </Button>
 
-                  
-
                   <Button
-  variant="glass"
-  size="sm"
-  onClick={() =>
-    window.open(
-      `http://127.0.0.1:8000/papers/${encodeURIComponent(p.title)}`,
-      "_blank"
-    )
-  }
->
-  <Download className="h-3.5 w-3.5" />
-  PDF
-</Button>
+                    variant="glass"
+                    size="sm"
+                    onClick={() =>
+                      window.open(
+                        `http://127.0.0.1:8000/papers/${encodeURIComponent(p.title)}`,
+                        "_blank"
+                      )
+                    }
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    PDF
+                  </Button>
                 </div>
               </div>
             </div>

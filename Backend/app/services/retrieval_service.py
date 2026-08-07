@@ -1,6 +1,9 @@
 from app.services.arxiv_service import search_papers as search_arxiv
 from app.services.semantic_scholar_service import search_semantic_scholar
 from app.services.openalex_service import search_openalex
+from app.services.crossref_service import search_crossref
+from app.services.deduplication_service import remove_duplicate_papers
+from app.services.ranking_service import rank_papers
 
 
 def search_papers(topic):
@@ -22,4 +25,13 @@ def search_papers(topic):
     except Exception as e:
         print("OpenAlex Error:", e)
 
-    return papers
+    try:
+        papers.extend(search_crossref(topic, limit=10))
+    except Exception as e:
+        print("Crossref Error:", e)
+
+    papers = remove_duplicate_papers(papers)
+
+    papers = rank_papers(topic, papers)
+
+    return papers[:10] 
