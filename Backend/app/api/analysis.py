@@ -1,5 +1,5 @@
 import traceback
-from typing import Literal, List
+from typing import List, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
@@ -8,19 +8,16 @@ from sentence_transformers import SentenceTransformer
 
 from app.database.chroma import collection
 from app.database.mongodb import (
-    research_sessions_collection,
-    agent_runs_collection,
     agent_outputs_collection,
+    agent_runs_collection,
+    research_sessions_collection,
 )
 
 # Agent imports
-from app.agents.summarizer import (
-    summarize_paper,
-    run_summary_agent,
-)
-from app.agents.research_gap import (
-    find_research_gaps,
-    run_research_gap_agent,
+from app.agents.coordinator import run_agent
+from app.agents.comparison_agent import (
+    compare_papers,
+    run_comparison_agent,
 )
 from app.agents.dataset_agent import (
     recommend_datasets,
@@ -38,10 +35,6 @@ from app.agents.novelty_agent import (
     analyze_novelty,
     run_novelty_agent,
 )
-from app.agents.comparison_agent import (
-    compare_papers,
-    run_comparison_agent,
-)
 from app.agents.ppt_agent import (
     generate_presentation,
     run_ppt_agent,
@@ -49,6 +42,14 @@ from app.agents.ppt_agent import (
 from app.agents.report_agent import (
     generate_ieee_report,
     run_ieee_report_agent,
+)
+from app.agents.research_gap import (
+    find_research_gaps,
+    run_research_gap_agent,
+)
+from app.agents.summarizer import (
+    run_summary_agent,
+    summarize_paper,
 )
 from app.agents.workspace_coordinator import run_workspace
 from app.services.retrieval_service import search_papers
@@ -218,7 +219,7 @@ WORKSPACE_AGENT_HANDLERS = {
 
 
 # ==========================================================
-# Run Structured Paper Analysis
+# Run Intelligent Coordinator Analysis
 # ==========================================================
 @router.post(
     "/run",
@@ -228,14 +229,23 @@ def run_analysis(
     request: AnalysisRequest,
 ):
     try:
+
+        # --------------------------------------------------
+        # Retrieve paper context from ChromaDB
+        # --------------------------------------------------
+
         retrieval_query = ANALYSIS_QUERIES[request.analysis_type]
 
-        query_embedding = model.encode(retrieval_query).tolist()
+        query_embedding = model.encode(
+            retrieval_query
+        ).tolist()
 
         results = collection.query(
             query_embeddings=[query_embedding],
             n_results=10,
-            where={"paper_name": request.paper_name},
+            where={
+                "paper_name": request.paper_name
+            },
         )
 
         documents = results.get(
@@ -246,25 +256,123 @@ def run_analysis(
         if not documents:
             raise HTTPException(
                 status_code=404,
-                detail=f"No indexed content found for '{request.paper_name}'",
+                detail=(
+                    f"No indexed content found for "
+                    f"'{request.paper_name}'"
+                ),
             )
 
         context = "\n\n".join(documents)
 
-        handler = ANALYSIS_HANDLERS.get(request.analysis_type)
-        if not handler:
+        # --------------------------------------------------
+        # Convert frontend analysis type into a natural
+        # language query for the Coordinator
+        # --------------------------------------------------
+
+        coordinator_queries = {
+            "summary": (
+                "Summarize this research paper "
+                "and explain its main objective, "
+                "methodology, contributions, results, "
+                "and conclusion."
+            ),
+
+            "gaps": (
+                "Analyze this research paper and identify "
+                "research gaps, limitations, weaknesses, "
+                "future work, and open research problems."
+            ),
+
+            "datasets": (
+                "Analyze this research paper and recommend "
+                "suitable datasets for reproducing, "
+                "validating, or extending the research."
+            ),
+
+            "experiments": (
+                "Analyze this research paper and recommend "
+                "appropriate experiments, methodology, "
+                "baselines, evaluation metrics, and "
+                "experimental setup."
+            ),
+
+            "literature": (
+                "Generate a detailed literature survey "
+                "for this research paper including existing "
+                "work, limitations, research gaps, and "
+                "future directions."
+            ),
+
+            "novelty": (
+                "Analyze the novelty, originality, "
+                "contributions, strengths, weaknesses, "
+                "and research differentiation of this paper."
+            ),
+
+            "report": (
+                "Perform a complete analysis of this "
+                "research paper and generate a comprehensive "
+                "research report."
+            ),
+
+            "ppt": (
+                "Perform a complete analysis of this "
+                "research paper to prepare research "
+                "presentation content."
+            ),
+        }
+
+        coordinator_query = coordinator_queries.get(
+            request.analysis_type
+        )
+
+        if not coordinator_query:
             raise HTTPException(
                 status_code=400,
-                detail=f"Handler for analysis type '{request.analysis_type}' is currently not implemented.",
+                detail=(
+                    f"Unsupported analysis type: "
+                    f"{request.analysis_type}"
+                ),
             )
 
-        result = handler(context)
+        # --------------------------------------------------
+        # Run Intelligent Coordinator
+        # --------------------------------------------------
+
+        result = run_agent(
+            query=coordinator_query,
+            context=context,
+        )
 
         if not result:
             raise HTTPException(
                 status_code=500,
-                detail="Analysis returned an empty result",
+                detail=(
+                    "Coordinator returned an empty result."
+                ),
             )
+
+        # --------------------------------------------------
+        # Convert Coordinator result into frontend-friendly
+        # response
+        # --------------------------------------------------
+
+        if isinstance(result, dict):
+
+            # Complete analysis returns the final report
+            if request.analysis_type == "report":
+                final_result = result
+
+            # Other workflows return structured results
+            else:
+                final_result = result
+
+        else:
+            final_result = result
+
+        # --------------------------------------------------
+        # Store summary execution statistics
+        # --------------------------------------------------
 
         if request.analysis_type == "summary":
             agent_runs_collection.update_one(
@@ -279,19 +387,30 @@ def run_analysis(
 
         return AnalysisResponse(
             success=True,
-            message="Analysis completed successfully",
+            message=(
+                "Coordinator analysis completed successfully"
+            ),
             paper_name=request.paper_name,
             analysis_type=request.analysis_type,
-            result=result,
+            result=(
+                final_result
+                if isinstance(final_result, str)
+                else str(final_result)
+            ),
         )
 
     except HTTPException:
         raise
 
     except Exception as exc:
+
+        traceback.print_exc()
+
         raise HTTPException(
             status_code=500,
-            detail=f"Analysis failed: {str(exc)}",
+            detail=(
+                f"Coordinator analysis failed: {str(exc)}"
+            ),
         ) from exc
 
 

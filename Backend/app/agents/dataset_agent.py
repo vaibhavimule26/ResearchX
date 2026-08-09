@@ -2,8 +2,8 @@ from app.llm.gemini import generate_answer
 
 
 def recommend_datasets(context: str) -> str:
-    """
-    Recommend evidence-grounded datasets for extending,
+    """Recommend evidence-grounded datasets for extending,
+
     validating, or reproducing the selected research paper.
     """
 
@@ -25,20 +25,28 @@ these sections:
 - Explain the task, domain, input format, output labels,
   modalities, and evaluation needs when supported by context.
 
-2. Datasets Explicitly Mentioned in the Paper
-- List datasets explicitly named in the provided paper context.
-- For each dataset explain how it is used.
-- Do not invent dataset names.
-- If no dataset is explicitly mentioned, clearly state that.
+2. Dataset Usage in Original Paper
 
-3. Recommended Public Datasets
-For each suitable dataset provide:
 - Dataset Name
-- Domain
-- Why It Is Suitable
+- Status
+- Evidence from Paper
+- Purpose
+
+If unavailable:
+
+Dataset Name: Not specified
+Status: Not specified in the paper.
+
+3. Recommended External Datasets
+
+For each recommendation:
+
+- Dataset Name
+- Status: Recommended by ResearchX
+- Why Suitable
 - Possible Use Case
-- Expected Data Type or Modality
-- Access Source or Platform, if confidently known
+- Data Type / Modality
+- Access Source, only if confidently known
 
 4. Dataset Comparison
 Compare the recommended datasets using:
@@ -53,13 +61,41 @@ Compare the recommended datasets using:
 - Explain why it is the strongest match.
 - Suggest how it could be used in a concrete experiment.
 
+IMPORTANT SOURCE DISTINCTION:
+
+For every dataset, clearly classify it as one of:
+
+A. EXPLICITLY USED IN PAPER
+- Only when the provided paper context explicitly states
+  that the dataset was used by the authors.
+
+B. RECOMMENDED BY RESEARCHX
+- External dataset suggested by ResearchX for reproduction,
+  validation, comparison, or extension.
+
+Never present a recommended dataset as a dataset used by
+the original paper.
+
+Use exactly these labels:
+
+"Explicitly Used in Paper"
+"Recommended by ResearchX"
+
+If the paper does not specify a dataset, write:
+
+"Explicitly Used in Paper: Not specified in the paper."
+
+Then provide recommendations separately under:
+
+"Recommended by ResearchX"
+
+Do not invent dataset usage, results, statistics, URLs,
+licenses, or access conditions.
+
 Important rules:
 - Base the analysis on the provided research paper context.
 - Never claim that a dataset was used in the paper unless the
   provided context explicitly supports that claim.
-- Clearly distinguish:
-  a) datasets explicitly mentioned in the paper
-  b) external datasets recommended by you
 - Do not invent dataset names, benchmark statistics, URLs,
   licenses, sizes, or access conditions.
 - If exact information is uncertain, say so clearly.
@@ -74,13 +110,14 @@ Important rules:
         context=context,
         question=question,
     )
-    
-    # ==========================================================
+
+
+# ==========================================================
 # Workspace Dataset Agent
 # ==========================================================
 def run_dataset_agent(topic: str, papers) -> str:
-    """
-    Execute the Dataset Recommendation Agent
+    """Execute the Dataset Recommendation Agent
+
     for all selected papers.
     """
 

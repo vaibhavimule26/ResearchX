@@ -232,12 +232,28 @@ export type AnalysisResponse = {
 };
 
 // ==========================
-// Run Structured AI Analysis
+// Intelligent Coordinator Analysis
 // ==========================
 export async function runAnalysis(
   paperName: string,
   analysisType: AnalysisType
 ): Promise<AnalysisResponse> {
+  if (!paperName?.trim()) {
+    throw new Error("Paper name is required.");
+  }
+
+  if (!analysisType) {
+    throw new Error("Analysis type is required.");
+  }
+
+  console.log(
+    "ResearchX Coordinator:",
+    {
+      paperName,
+      analysisType,
+    }
+  );
+
   const response = await fetch(
     `${API_BASE_URL}/analysis/run`,
     {
@@ -252,7 +268,14 @@ export async function runAnalysis(
     }
   );
 
-  return handleResponse(response);
+  const data = await handleResponse(response);
+
+  console.log(
+    "Coordinator Result:",
+    data
+  );
+
+  return data as AnalysisResponse;
 }
 
 export type ReportResponse = {
