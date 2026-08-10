@@ -73,3 +73,47 @@ integrate multi-source research paper retrieval
 - Explainable Top-10 paper selection
 
 This phase focuses on improving retrieval quality before implementing advanced multi-agent orchestration.
+
+## Phase 2 Progress — Intelligent Coordinator Integration 🚀
+
+Today, ResearchX Phase 2 was upgraded from a basic agent-based workflow to an intelligent multi-agent coordination system.
+
+### Completed Today
+
+- ✅ Upgraded the Coordinator Agent
+- ✅ Added intelligent intent detection
+- ✅ Added dynamic workflow planning
+- ✅ Added dynamic agent registry
+- ✅ Added workflow execution with deduplication
+- ✅ Added Coordinator confidence scoring
+- ✅ Connected the Coordinator with the `/analysis/run` API
+- ✅ Connected the upgraded backend workflow with the frontend
+- ✅ Tested Summary, Research Gap, Dataset, Experiment, and Literature workflows
+- ✅ Verified multi-agent execution with 100% coordinator confidence
+- ✅ Successfully tested the Phase 2 workflow from the website
+
+### Current Architecture
+
+```text
+User
+  ↓
+ResearchX Frontend
+  ↓
+Analysis API
+  ↓
+Coordinator Agent
+  ↓
+Intent Detection
+  ↓
+Workflow Planning
+  ↓
+Specialized Research Agents
+  ├── Summary
+  ├── Research Gap
+  ├── Dataset
+  ├── Experiment
+  ├── Literature
+  ├── Novelty
+  └── Comparison
+  ↓
+Final Research Result
