@@ -199,11 +199,22 @@ function WorkspacePage() {
 
   const loadRecentResearch = async () => {
     try {
-      const response = await fetch("http://127.0.0.1:8000/analysis/recent");
+      const response = await fetch(
+        "http://127.0.0.1:8000/analysis/recent"
+      );
+
+      if (!response.ok) {
+        console.error("Failed to load recent research:", response.status);
+        setRecentResearch([]);
+        return;
+      }
+
       const data = await response.json();
-      setRecentResearch(data);
+
+      setRecentResearch(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error(error);
+      setRecentResearch([]);
     }
   };
 

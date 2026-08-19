@@ -3,8 +3,9 @@ import re
 import time
 import logging
 from dotenv import load_dotenv
-import google.generativeai as genai
-from google.api_core.exceptions import ResourceExhausted, GoogleAPIError
+from langchain_mistralai import ChatMistralAI
+from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ResearchX-LLM")
@@ -20,51 +21,33 @@ load_dotenv(
     override=True,
 )
 
-# Parse multiple keys or single key
-raw_keys = os.getenv("GEMINI_API_KEYS") or os.getenv("GEMINI_API_KEY", "")
-API_KEYS = [k.strip() for k in raw_keys.split(",") if k.strip()]
-
-if not API_KEYS:
-    raise ValueError(
-        f"No Gemini API key found in .env.\nExpected GEMINI_API_KEY or GEMINI_API_KEYS at: {ENV_PATH}"
-    )
-
-ACTIVE_MODEL_NAME = "gemini-3.6-flash"
-current_key_index = 0
-
-generation_config = genai.GenerationConfig(
-    temperature=0.3,
-    max_output_tokens=8192,
-)
-
-
 def get_configured_model():
-    global current_key_index
-    active_key = API_KEYS[current_key_index]
+    """Initializes high-accuracy LLM using active working keys from .env."""
+    mistral_key = os.getenv("MISTRAL_API_KEY")
+    groq_key = os.getenv("GROQ_API_KEY")
+    openrouter_key = os.getenv("OPENROUTER_API_KEY")
 
-    genai.configure(api_key=active_key)
-    return genai.GenerativeModel(
-        model_name=ACTIVE_MODEL_NAME,
-        generation_config=generation_config,
-    )
-
-
-def rotate_key() -> bool:
-    global current_key_index
-    if len(API_KEYS) > 1:
-        current_key_index = (current_key_index + 1) % len(API_KEYS)
-        logger.warning(
-            f"🔄 Rate limit hit. Switched to API Key #{current_key_index + 1} of {len(API_KEYS)}"
+    if mistral_key:
+        return ChatMistralAI(
+            model="mistral-small-latest",
+            mistral_api_key=mistral_key,
+            temperature=0.1
         )
-        return True
-    return False
-
-
-def parse_cooldown(error_str: str) -> float:
-    match = re.search(r"retry in (\d+(\.\d+)?)s", error_str, re.IGNORECASE)
-    if match:
-        return float(match.group(1)) + 1.5
-    return 20.0
+    elif groq_key:
+        return ChatGroq(
+            model_name="llama-3.1-8b-instant",
+            groq_api_key=groq_key,
+            temperature=0.1
+        )
+    elif openrouter_key:
+        return ChatOpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=openrouter_key,
+            model="deepseek/deepseek-chat",
+            temperature=0.1
+        )
+    else:
+        raise ValueError("No active API keys found in .env (Mistral, Groq, or OpenRouter required).")
 
 
 # ==========================
@@ -81,8 +64,7 @@ def generate_answer(
     if not question or not question.strip():
         return "No research question was provided."
 
-    prompt = f"""
-You are ResearchX, an AI Research Assistant.
+    prompt = f"""You are ResearchX, an AI Research Assistant.
 
 Analyze the provided research paper and answer the question accurately.
 
@@ -105,46 +87,17 @@ QUESTION:
     for attempt in range(max_retries):
         try:
             model = get_configured_model()
-            response = model.generate_content(prompt)
+            response = model.invoke(prompt)
 
-            if not response.candidates:
-                return "Gemini returned no response."
-
-            text = response.text
+            text = response.content if hasattr(response, "content") else str(response)
             if not text or not text.strip():
-                return "Gemini returned an empty response."
+                return "LLM returned an empty response."
 
             return text.strip()
 
-        except ResourceExhausted as error:
-            last_error = error
-            error_str = str(error)
-
-            # Rotate to next key if available
-            if rotate_key():
-                time.sleep(1)
-                continue
-
-            # If only 1 key exists, wait out the Google cooldown
-            wait_time = parse_cooldown(error_str)
-            logger.warning(
-                f"⚠️ Rate limit on single API key. Pausing execution for {wait_time:.1f}s (Attempt {attempt + 1}/{max_retries})..."
-            )
-            time.sleep(wait_time)
-
-        except GoogleAPIError as error:
-            last_error = error
-            logger.error(f"Google API Error: {str(error)}")
-            if rotate_key():
-                time.sleep(1)
-            else:
-                time.sleep(2)
-
         except Exception as error:
-            raise RuntimeError(
-                f"Gemini generation failed: {str(error)}"
-            ) from error
+            last_error = error
+            logger.warning(f"Generation attempt {attempt + 1} failed: {str(error)}")
+            time.sleep(1.5)
 
-    raise RuntimeError(
-        f"Request failed after key rotation/cooldown: {str(last_error)}"
-    )
+    raise RuntimeError(f"Request failed after retries: {str(last_error)}")
