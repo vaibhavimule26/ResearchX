@@ -1,0 +1,40 @@
+
+# Local Git backup bundles
+*.bundle
+# Environment variables
+.env
+.env.*
+Backend/.env
+
+# Virtual environments
+venv/
+.venv/
+Backend/venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Uploaded PDFs
+uploads/
+Backend/uploads/
+
+# Local ChromaDB data
+chroma_db/
+chroma_data/
+Backend/chroma_db/
+
+# Local database
+*.db
+
+# Git backup bundles
+*.bundle
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
