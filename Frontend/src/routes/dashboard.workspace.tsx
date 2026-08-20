@@ -22,6 +22,7 @@ const AGENT_ICON_MAP: Record<string, any> = {
   "Paper Retrieval": Search,
   Summary: FileText,
   "Gap Analysis": Lightbulb,
+  "Research Gap": Lightbulb,
 };
 
 function WorkspacePage() {
@@ -48,20 +49,24 @@ function WorkspacePage() {
     try {
       setLoading(true);
 
-      const response = await fetch(
-        "http://127.0.0.1:8000/analysis/search-papers",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            topic: prompt,
-          }),
-        }
-      );
+      const response = await fetch("http://127.0.0.1:8000/search", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          query: prompt,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Search failed");
+      }
 
       const data = await response.json();
+
+      console.log("Search query:", data.query);
+      console.log("Search results:", data.papers);
 
       setPapers(data.papers || []);
 
@@ -83,35 +88,77 @@ function WorkspacePage() {
       return;
     }
 
-    const chosenPapers = selectedPapers.map((idx) => papers[idx]);
+    if (selectedPapers.length === 0) {
+      alert("Please select at least one paper.");
+      return;
+    }
 
     try {
       setLoading(true);
 
-      const response = await fetch("http://127.0.0.1:8000/analysis/workspace", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          topic: prompt,
-          papers: chosenPapers,
-        }),
+      const currentSessionId = sessionId || `session_${Date.now()}`;
+      setSessionId(currentSessionId);
+
+      // Convert selected papers into backend WorkspacePaper format
+      const chosenPapers = selectedPapers.map((idx) => {
+        const paper = papers[idx];
+
+        return {
+          title: paper.title || "",
+          authors: Array.isArray(paper.authors)
+            ? paper.authors.join(", ")
+            : paper.authors || "",
+          summary: paper.summary || paper.abstract || "",
+          published:
+            paper.published ||
+            paper.year?.toString() ||
+            "",
+          pdf_url:
+            paper.pdf_url ||
+            paper.url ||
+            "",
+        };
       });
+
+      console.log("Sending workspace papers:", chosenPapers);
+
+      const response = await fetch(
+        "http://127.0.0.1:8000/analysis/workspace",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            topic: prompt,
+            session_id: currentSessionId,
+            papers: chosenPapers,
+          }),
+        }
+      );
 
       const data = await response.json();
 
-      if (data.success) {
-        setSessionId(data.session_id);
-        setActiveSessionId(data.session_id);
-        setAgents(data.agents || []);
-        setAgentResults({});
-        loadRecentResearch();
-      } else {
-        alert("Failed to start research.");
+      console.log("Workspace response:", data);
+
+      if (!response.ok) {
+        console.error("Workspace error:", data);
+        alert(data.detail || "Failed to create research workspace.");
+        return;
       }
+
+      // Create agent cards returned by backend
+      if (data.agents) {
+        setAgents(data.agents);
+      }
+
+      // Clear old results
+      setSummary("");
+      setAgentResults({});
+
+      loadRecentResearch();
     } catch (error) {
-      console.error(error);
+      console.error("Error creating workspace:", error);
       alert("Error starting research workflow.");
     } finally {
       setLoading(false);
@@ -122,9 +169,7 @@ function WorkspacePage() {
     fileInputRef.current?.click();
   };
 
-  const handleFileChange = async (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
 
     if (!file) return;
@@ -153,55 +198,123 @@ function WorkspacePage() {
 
   const runAgent = async (agentName: string) => {
     const chosenPapers = selectedPapers.map((idx) => papers[idx]);
+    const selectedPaperNames = chosenPapers
+      .map((paper) => paper?.title)
+      .filter(Boolean);
+
+    const analysisTypeMap: Record<string, string> = {
+      Summary: "summary",
+      "Research Gap": "gaps",
+      "Dataset Recommendation": "datasets",
+      "Experiment Recommendation": "experiments",
+      "Literature Survey": "literature",
+      "Novelty Analysis": "novelty",
+    };
+
+    const analysisType = analysisTypeMap[agentName] || "summary";
+
+    // Set status to Running
+    setAgents((prev) =>
+      prev.map((agent) =>
+        agent.agent === agentName
+          ? {
+              ...agent,
+              status: "Running",
+              progress: 50,
+            }
+          : agent
+      )
+    );
 
     try {
-      const response = await fetch(
-        "http://127.0.0.1:8000/analysis/run-agent",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            session_id: sessionId,
-            topic: prompt,
-            papers: chosenPapers,
-            agent: agentName,
-          }),
-        }
-      );
+      const response = await fetch("http://127.0.0.1:8000/analysis/run", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          paper_name: selectedPaperNames[0] || "",
+          paper_names: selectedPaperNames,
+          query: prompt,
+          analysis_type: analysisType,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to run ${agentName}: ${response.statusText}`);
+      }
 
       const data = await response.json();
 
-      if (data.success) {
-        setAgentResults((prev) => ({
-          ...prev,
-          [agentName]: data.result,
-        }));
+      let resultText = "";
 
-        setAgents((prev) =>
-          prev.map((a) =>
-            a.agent === agentName
-              ? {
-                  ...a,
-                  status: "Completed",
-                  progress: 100,
-                }
-              : a
+      if (Array.isArray(data.results)) {
+        resultText = data.results
+          .map(
+            (item: { paper_name: string; result: string }) =>
+              `==============================\n` +
+              `PAPER: ${item.paper_name}\n` +
+              `==============================\n\n` +
+              `${item.result}`
           )
-        );
+          .join("\n\n\n");
+      } else {
+        resultText =
+          data.result ||
+          data.data ||
+          "No result generated.";
       }
+
+      // Save result for this agent
+      setAgentResults((prev) => ({
+        ...prev,
+        [agentName]: resultText,
+      }));
+
+      // Summary also save separately
+      if (agentName === "Summary") {
+        setSummary(resultText);
+      }
+
+      // Mark agent as completed
+      setAgents((prev) =>
+        prev.map((agent) =>
+          agent.agent === agentName
+            ? {
+                ...agent,
+                status: "Completed",
+                progress: 100,
+              }
+            : agent
+        )
+      );
     } catch (error) {
-      console.error(error);
-      alert("Failed to run agent.");
+      console.error("Agent run error:", error);
+
+      // If error, return agent to Pending
+      setAgents((prev) =>
+        prev.map((agent) =>
+          agent.agent === agentName
+            ? {
+                ...agent,
+                status: "Pending",
+                progress: 0,
+              }
+            : agent
+        )
+      );
+
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Failed to run agent"
+      );
     }
   };
 
   const loadRecentResearch = async () => {
     try {
-      const response = await fetch(
-        "http://127.0.0.1:8000/analysis/recent"
-      );
+      const response = await fetch("http://127.0.0.1:8000/analysis/recent");
 
       if (!response.ok) {
         console.error("Failed to load recent research:", response.status);
@@ -210,8 +323,8 @@ function WorkspacePage() {
       }
 
       const data = await response.json();
-
-      setRecentResearch(Array.isArray(data) ? data : []);
+      const sessionList = Array.isArray(data) ? data : data.data || [];
+      setRecentResearch(Array.isArray(sessionList) ? sessionList : []);
     } catch (error) {
       console.error(error);
       setRecentResearch([]);
@@ -374,12 +487,18 @@ function WorkspacePage() {
                         Published: {paper.published || "N/A"}
                       </p>
 
+                      {paper.relevance_score !== undefined && (
+                        <p className="mt-1 text-xs font-medium text-green-500">
+                          Relevance Score: {(paper.relevance_score * 100).toFixed(1)}%
+                        </p>
+                      )}
+
                       {paper.pdf_url && (
                         <a
                           href={paper.pdf_url}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-blue-500 text-sm"
+                          className="text-blue-500 text-sm mt-1 inline-block"
                         >
                           View PDF
                         </a>
@@ -461,6 +580,8 @@ function WorkspacePage() {
                             className={`truncate text-xs ${
                               a.status === "Completed"
                                 ? "text-green-500"
+                                : a.status === "Running"
+                                ? "text-yellow-500"
                                 : "text-muted-foreground"
                             }`}
                           >
@@ -479,14 +600,18 @@ function WorkspacePage() {
 
                     <Button
                       className="mt-3"
-                      disabled={a.status === "Completed"}
+                      disabled={a.status === "Completed" || a.status === "Running"}
                       onClick={() => runAgent(a.agent)}
                     >
-                      {a.status === "Completed" ? "Completed" : "Run"}
+                      {a.status === "Running"
+                        ? "Running..."
+                        : a.status === "Completed"
+                        ? "Completed"
+                        : "Run"}
                     </Button>
 
                     {agentResults[a.agent] && (
-                      <div className="mt-4 rounded-lg border p-3 text-sm whitespace-pre-wrap">
+                      <div className="mt-4 max-h-[500px] overflow-y-auto rounded-lg border p-4 text-sm whitespace-pre-wrap">
                         {agentResults[a.agent]}
                       </div>
                     )}

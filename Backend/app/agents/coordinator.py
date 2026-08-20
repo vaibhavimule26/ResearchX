@@ -1,7 +1,7 @@
 import os
 import glob
 import sqlite3
-from typing import Optional, Any
+from typing import Optional, Any, List
 
 # Multi-API LLM Routers Import
 from app.llm.multi_api_router import (
@@ -216,7 +216,13 @@ def load_context_for_paper(paper_name: Optional[str], query: str = "") -> str:
 # ==========================================================
 # Main Coordinator Function
 # ==========================================================
-def run_agent(query: str, paper_name: Optional[str] = None, context: Optional[str] = None, **kwargs: Any) -> dict:
+def run_agent(
+    query: str,
+    paper_name: Optional[str] = None,
+    papers: Optional[List[Any]] = None,
+    context: Optional[str] = None,
+    **kwargs: Any
+) -> dict:
     q_lower = query.lower() if query else ""
 
     # Route Intent
@@ -231,26 +237,120 @@ def run_agent(query: str, paper_name: Optional[str] = None, context: Optional[st
     else:
         agent_type = "summary"
 
-    active_context = context if (context and len(context.strip()) > 50) else load_context_for_paper(paper_name, query)
+    # ======================================================
+    # MULTI-PAPER SUMMARY EXECUTION
+    # ======================================================
+    paper_list = papers or kwargs.get("paper_names") or []
+    if not paper_list and paper_name:
+        paper_list = [paper_name]
 
+    if agent_type == "summary" and isinstance(paper_list, list) and len(paper_list) > 1:
+        all_summaries = []
+
+        for index, paper_item in enumerate(paper_list, start=1):
+            if isinstance(paper_item, dict):
+                selected_paper = paper_item.get("title", "")
+                paper_context = paper_item.get("summary") or paper_item.get("abstract") or ""
+            elif hasattr(paper_item, "title"):
+                selected_paper = getattr(paper_item, "title", "")
+                paper_context = getattr(paper_item, "summary", "") or getattr(paper_item, "abstract", "")
+            else:
+                selected_paper = str(paper_item)
+                paper_context = ""
+
+            if not paper_context or len(paper_context.strip()) < 50:
+                paper_context = load_context_for_paper(selected_paper, query)
+
+            paper_output = call_groq_api(
+                prompt=f"""
+Provide a structured academic summary for the research paper: "{selected_paper}".
+
+Include these sections:
+1. Problem Statement
+Explain what core problem the paper aims to solve.
+
+2. Methodology
+Explain the approach, model, framework, or methodology used.
+
+3. Key Findings
+Describe the main findings or contributions.
+Do not invent numerical results.
+
+4. Research Contribution
+Explain what this paper contributes to its research area.
+
+5. Limitations / Future Scope
+Mention limitations or future directions only if supported
+by the provided context. Otherwise write:
+"Not clearly specified in the available paper context."
+
+Keep the summary focused on this paper only.
+Do not combine it with other papers.
+Do not compare papers.
+""",
+                context=paper_context
+            )
+
+            all_summaries.append(
+                f"\n\n{'=' * 70}\n"
+                f"PAPER {index}: {selected_paper}\n"
+                f"{'=' * 70}\n\n"
+                f"{paper_output}"
+            )
+
+        combined_output = "\n".join(all_summaries)
+
+        return {
+            "intent": "summary",
+            "status": "success",
+            "results": {
+                "summary": {
+                    "output": combined_output
+                }
+            }
+        }
+
+    # ======================================================
+    # SINGLE PAPER / OTHER AGENTS
+    # ======================================================
+    active_context = (
+        context
+        if (context and len(context.strip()) > 50)
+        else load_context_for_paper(paper_name, query)
+    )
+
+    # ======================================================
     # Dispatch to Multi-Agent Function
+    # ======================================================
     if agent_type == "literature_survey":
         output = get_literature_fn()(active_context)
+
     elif agent_type == "gaps":
         output = get_gap_fn()(active_context)
+
     elif agent_type == "datasets":
         dataset_fn = get_dataset_fn()
+
         try:
-            output = dataset_fn(context=active_context, query=query)
+            output = dataset_fn(
+                context=active_context,
+                query=query
+            )
         except TypeError:
             output = dataset_fn(active_context)
+
     elif agent_type == "experiments":
         output = get_experiment_fn()(active_context)
+
     else:
         output = get_summary_fn()(active_context)
 
     return {
         "intent": agent_type,
         "status": "success",
-        "results": {agent_type: {"output": output}}
+        "results": {
+            agent_type: {
+                "output": output
+            }
+        }
     }

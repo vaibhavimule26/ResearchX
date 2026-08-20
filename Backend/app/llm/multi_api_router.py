@@ -35,7 +35,7 @@ def call_groq_api(prompt: str, context: str = "") -> str:
         client = Groq(api_key=api_key)
         user_content = f"Context:\n{context[:12000]}\n\nTask:\n{prompt}" if context else prompt
         
-        for model in ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "gemma2-9b-it"]:
+        for model in ["llama-3.1-8b-instant", "openai/gpt-oss-20b", "gemma2-9b-it"]:
             try:
                 res = client.chat.completions.create(
                     model=model,

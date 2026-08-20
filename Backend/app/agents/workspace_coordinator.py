@@ -37,7 +37,7 @@ def run_workspace(topic: str, session_id: str, papers):
     NOTE:
     The coordinator DOES NOT execute any AI agent.
     Each agent is executed separately through
-    /analysis/run-agent.
+    /analysis/run.
     """
 
     agents = [
