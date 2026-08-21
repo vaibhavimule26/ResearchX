@@ -1,6 +1,7 @@
 import os
 import re
-from app.llm.multi_api_router import call_mistral_api
+from typing import List, Dict, Any
+from app.llm.multi_api_router import call_mistral_api, call_groq_api
 
 
 def clean_markdown_table_formatting(text: str) -> str:
@@ -20,6 +21,68 @@ def clean_markdown_table_formatting(text: str) -> str:
             cleaned_lines.append(line)
 
     return "\n".join(cleaned_lines)
+
+
+def run_gap_agent(topic: str, papers: List[Any]) -> List[Dict[str, str]]:
+    """Runs gap analysis across selected research papers strictly using the provided context."""
+    results = []
+
+    for paper in papers:
+        # Support both Pydantic models (paper.title) and standard dictionaries (paper["title"])
+        title = getattr(paper, "title", None) or (paper.get("title") if isinstance(paper, dict) else "Untitled Paper")
+        authors = getattr(paper, "authors", None) or (paper.get("authors") if isinstance(paper, dict) else "Not specified")
+        summary = (
+            getattr(paper, "summary", None)
+            or getattr(paper, "abstract", None)
+            or (paper.get("summary") or paper.get("abstract") if isinstance(paper, dict) else "Not specified in the paper.")
+        )
+        published = getattr(paper, "published", None) or (paper.get("published") if isinstance(paper, dict) else "Not specified")
+
+        paper_context = f"""
+Title:
+{title}
+
+Authors:
+{authors}
+
+Abstract:
+{summary}
+
+Published:
+{published}
+"""
+
+        question = f"""
+Analyze ONLY this research paper.
+
+Research Topic: {topic}
+
+Identify:
+1. Research gaps
+2. Limitations
+3. Unresolved problems
+4. Future research directions
+
+Use only the provided paper context.
+If something is missing, write:
+"Not specified in the paper."
+"""
+
+        try:
+            result = call_groq_api(
+                prompt=question,
+                context=paper_context
+            )
+        except Exception as e:
+            print(f"[Gap Agent Groq Error for '{title}']: {e}")
+            result = "Not specified in the paper."
+
+        results.append({
+            "paper_name": title,
+            "result": result
+        })
+
+    return results
 
 
 def analyze_research_gap(

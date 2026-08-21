@@ -1,14 +1,18 @@
+from typing import Any, Dict, List
+
 from app.llm.gemini import generate_answer
+from app.llm.multi_api_router import call_groq_api
 
 
 # ==========================================================
-# Literature Survey Agent
+# SINGLE PAPER LITERATURE SURVEY AGENT
 # ==========================================================
+
 
 def generate_literature_survey(context: str) -> str:
     """
-    Generate an evidence-grounded literature survey
-    for the provided research paper.
+    Generate a concise, evidence-grounded literature survey
+    for one research paper.
     """
 
     if not context or not context.strip():
@@ -18,272 +22,277 @@ def generate_literature_survey(context: str) -> str:
         )
 
     question = """
-You are ResearchX, an expert academic literature-review
-researcher.
+Analyze ONLY the provided research paper context.
 
-Analyze ONLY the research paper context provided.
+Act as a research literature survey assistant.
 
-Your goal is to understand the research landscape described
-by the paper and explain how the work relates to previous
-research.
+Generate a SHORT and ACCURATE literature survey for THIS
+single paper only.
 
-Produce a structured Literature Survey Report with these sections:
+Use EXACTLY this Markdown structure:
 
-1. Research Domain Overview
+### 1. Research Area
+- **Domain:** State the research domain mentioned or clearly
+  supported by the paper.
+- **Problem:** State the main problem addressed by the paper.
 
-Explain:
+---
 
-- Research domain
-- Main research problem
-- Importance of the problem
-- Research context
+### 2. Main Approach
+- Briefly describe the main method, model, system, or approach
+  proposed or discussed in the paper.
+- If unavailable, write: Not specified in paper.
 
-2. Existing Work Mentioned in the Paper
+---
 
-Identify the previous approaches, methods, systems, or
-research directions explicitly mentioned in the context.
+### 3. Key Contribution
+- State the main contribution or purpose of the paper.
+- Do not claim novelty unless explicitly supported by the paper.
 
-For each one explain:
+---
 
-- Approach
-- Purpose
-- Main contribution
-- Relevance to the current paper
+### 4. Related Work / Research Direction
+- Mention ONLY previous approaches, systems, methods, or research
+  directions explicitly mentioned in the paper context.
+- If no previous work is clearly mentioned, write:
+  Not specified in paper.
 
-IMPORTANT:
-Do not invent authors, papers, citations, or methods that
-are not present in the provided context.
+---
 
-3. Existing Methodology Landscape
+### 5. Research Gap / Limitation
+- State ONLY limitations, gaps, or unresolved problems explicitly
+  mentioned or clearly supported by the paper.
+- Do NOT invent future problems or limitations.
+- If unavailable, write: Not specified in paper.
 
-Organize the previous approaches into meaningful categories.
+---
 
-For example:
+### 6. Paper Position
+- In 1-2 short sentences, explain how this paper addresses
+  the identified problem or research direction.
+- If unavailable, write: Not specified in paper.
 
-- Traditional approaches
-- Machine learning approaches
-- Deep learning approaches
-- Hybrid approaches
-- Other approaches
+---
 
-Only create categories supported by the context.
+### 7. Quick Takeaway
+- Write ONE concise sentence summarizing the paper.
 
-4. Strengths of Existing Work
-
-Identify strengths of the previous approaches explicitly
-supported by the paper.
-
-Explain why each strength is valuable.
-
-5. Limitations of Existing Work
-
-Identify limitations explicitly discussed by the paper.
-
-Clearly distinguish:
-
-- Explicit limitation
-- Inferred limitation
-
-Use the label "Inferred" whenever a limitation is derived
-rather than directly stated.
-
-6. Research Gap
-
-Explain:
-
-- What existing work does not adequately solve
-- What remains unresolved
-- What motivates the current paper
-- How the paper attempts to address the gap
-
-Do not assume a research gap merely because information
-is missing.
-
-7. Position of the Current Paper
-
-Explain how the current paper positions itself relative
-to previous research.
-
-Include:
-
-- What it continues
-- What it changes
-- What it improves
-- What it introduces
-
-Clearly distinguish author claims from analysis.
-
-8. Comparative Analysis
-
-Compare the major approaches mentioned in the context.
-
-Use dimensions such as:
-
-- Method
-- Strength
-- Limitation
-- Application
-- Contribution
-- Relation to current paper
-
-Do not introduce external methods.
-
-9. Evolution of the Research Area
-
-Based ONLY on the provided context, explain how the research
-appears to have progressed from earlier approaches toward
-the current work.
-
-If the context is insufficient, write:
-
-"Research evolution cannot be established from the provided
-context."
-
-10. Open Research Problems
-
-Identify unresolved problems that are supported by the
-provided context.
-
-For each problem explain why it remains important.
-
-11. Future Literature Directions
-
-Identify research directions that logically follow from
-the literature discussed in the paper.
-
-Clearly label proposed directions as:
-
-"Proposed"
-
-Do not present proposed directions as established facts.
-
-12. Literature Survey Conclusion
-
-Summarize:
-
-- Major existing approaches
-- Important strengths
-- Major limitations
-- Research gap
-- Position of the current paper
-- Remaining opportunities
-
-13. Researcher's Quick Takeaways
-
-Provide 5 concise academic takeaways that a researcher
-should remember after reading this literature survey.
-
-IMPORTANT RULES:
-
-- Use ONLY information supported by the provided context.
-- Do not invent citations.
-- Do not invent paper titles.
-- Do not invent authors.
-- Do not invent publication years.
-- Do not introduce external research papers.
-- Clearly distinguish explicit information from inference.
-- Label inferred conclusions as "Inferred".
-- Label proposed future directions as "Proposed".
-- If information is unavailable, write:
-  "Not specified in the paper."
-- Do not claim that the current paper is superior unless
-  the provided context supports that conclusion.
-- Do not confuse the paper's claimed contribution with
-  independently verified novelty.
-- Use formal academic language.
-- Produce a complete literature survey.
+STRICT RULES:
+- Analyze ONLY the provided paper.
+- Do NOT use external knowledge.
+- Do NOT compare with other selected papers.
+- Do NOT invent authors, citations, publication years, datasets,
+  models, methods, tools, experiments, metrics, or results.
+- Do NOT mention famous systems or examples unless explicitly
+  present in the paper context.
+- Do NOT infer specific prior work from general domain knowledge.
+- If information is missing, write exactly:
+  Not specified in paper.
+- Keep the TOTAL response under 250 words.
+- Keep every section concise.
+- Do not add any sections outside the required format.
 """
 
-    return generate_answer(
-        context=context,
-        question=question,
-    )
-
-
-# ==========================================================
-# Workspace Literature Survey Agent
-# ==========================================================
-
-def run_literature_survey_agent(topic: str, papers) -> str:
-    """
-    Execute the Literature Survey Agent for multiple
-    selected research papers.
-    """
-
-    print("Running Literature Survey Agent...")
-
-    context_parts = []
-
-    for i, paper in enumerate(papers, start=1):
-
-        context_parts.append(
-            f"""
-==========================================================
-Paper {i}
-==========================================================
-
-Title:
-{paper.title}
-
-Authors:
-{", ".join(paper.authors)}
-
-Abstract / Summary:
-{paper.summary}
-
-Published:
-{paper.published}
-
-Citation Count:
-{getattr(paper, "citation_count", "Not specified")}
-
-Venue:
-{getattr(paper, "venue", "Not specified")}
-
-Source:
-{getattr(paper, "source", "Not specified")}
-"""
+    try:
+        return generate_answer(
+            context=context,
+            question=question,
         )
 
-    context = "\n\n".join(context_parts)
+    except Exception as e:
+        print(f"[Literature Survey Agent Error]: {e}")
+        return "Unable to generate literature survey."
 
-    workspace_question = f"""
-You are ResearchX, an expert academic literature analyst.
 
-Research Topic:
-{topic}
+# ==========================================================
+# MULTI-PAPER WORKSPACE LITERATURE AGENT
+# ==========================================================
 
-The context contains multiple research papers.
 
-Generate a comparative literature survey covering:
+def run_literature_agent(
+    topic: str, papers: List[Any]
+) -> List[Dict[str, str]]:
+    """
+    Generate one concise literature survey for each selected paper.
 
-1. Research domain
-2. Major approaches across the papers
-3. Paper-specific contributions
-4. Common strengths
-5. Common limitations
-6. Methodological differences
-7. Research gaps
-8. Conflicting or complementary approaches
-9. Evolution of the research area
-10. Underexplored research problems
-11. Proposed future research directions
-12. Overall literature conclusion
+    Each paper is analyzed independently.
+    No comparison is made between selected papers.
+    """
 
-IMPORTANT:
+    results = []
 
-- Use ONLY the provided papers.
-- Do not invent citations, papers, authors, or results.
-- Clearly distinguish paper facts from inference.
-- Label inferred conclusions as "Inferred".
-- Label proposed future directions as "Proposed".
-- If information is unavailable, write:
-  "Not specified in the provided papers."
-- Do not use external literature.
-- Produce a detailed academic literature synthesis.
+    for paper in papers:
+
+        # --------------------------------------------------
+        # GET PAPER TITLE
+        # --------------------------------------------------
+
+        if isinstance(paper, dict):
+            title = paper.get("title", "Untitled Paper")
+        else:
+            title = getattr(paper, "title", "Untitled Paper")
+
+        # --------------------------------------------------
+        # GET AUTHORS
+        # --------------------------------------------------
+
+        if isinstance(paper, dict):
+            authors = paper.get("authors", "Not specified")
+        else:
+            authors = getattr(paper, "authors", "Not specified")
+
+        if isinstance(authors, list):
+            authors = ", ".join(map(str, authors))
+
+        # --------------------------------------------------
+        # GET ABSTRACT / SUMMARY
+        # --------------------------------------------------
+
+        if isinstance(paper, dict):
+            summary = (
+                paper.get("abstract")
+                or paper.get("summary")
+                or "Not specified in paper."
+            )
+        else:
+            summary = (
+                getattr(paper, "abstract", None)
+                or getattr(paper, "summary", None)
+                or "Not specified in paper."
+            )
+
+        # --------------------------------------------------
+        # GET PUBLISHED DATE
+        # --------------------------------------------------
+
+        if isinstance(paper, dict):
+            published = paper.get("published", "Not specified")
+        else:
+            published = getattr(paper, "published", "Not specified")
+
+        # --------------------------------------------------
+        # CREATE PAPER CONTEXT
+        # --------------------------------------------------
+
+        paper_context = f"""
+Title:
+{title}
+
+Authors:
+{authors}
+
+Abstract:
+{summary}
+
+Published:
+{published}
 """
 
-    return generate_answer(
-        context=context,
-        question=workspace_question,
-    )
+        # --------------------------------------------------
+        # PROMPT
+        # --------------------------------------------------
+
+        question = f"""
+Analyze ONLY this selected research paper.
+
+Research Topic: {topic}
+
+Generate a SHORT and ACCURATE literature survey using ONLY
+the provided paper title, abstract, and context.
+
+Use EXACTLY this format:
+
+### 1. Research Area
+- Domain:
+- Problem:
+
+### 2. Main Approach
+Briefly explain the method, system, model, framework, or
+solution proposed in the paper.
+
+### 3. Key Contribution
+State the main contribution of the paper in 1-2 concise points.
+
+### 4. Related Work / Research Direction
+Mention previous methods, systems, concepts, or research
+directions ONLY if they are present in the paper context.
+If unavailable, write:
+"Not specified in the available paper context."
+
+### 5. Research Gap / Limitation
+Identify the gap, limitation, challenge, or unmet need that
+motivates this paper.
+
+You may infer the gap ONLY when it is directly supported by
+the problem statement or motivation in the provided context.
+Do not invent unsupported limitations.
+
+### 6. Paper Position
+Explain in one concise statement how this paper addresses
+the identified problem or gap.
+
+### 7. Quick Takeaway
+Give one short, simple academic takeaway.
+
+STRICT RULES:
+- Keep the complete analysis SHORT and focused.
+- Maximum approximately 250-350 words per paper.
+- Do not generate a long 13-section literature review.
+- Do not compare this paper with other selected papers.
+- Do not invent authors, citations, papers, methods, results,
+  datasets, or limitations.
+- Use only information supported by the available paper context.
+- If information is missing, clearly state:
+  "Not specified in the available paper context."
+- Keep the same EXACT structure for every selected paper.
+"""
+
+        # --------------------------------------------------
+        # CALL LLM
+        # --------------------------------------------------
+
+        try:
+            result = call_groq_api(
+                prompt=question,
+                context=paper_context,
+            )
+
+        except Exception as e:
+            print(f"[Literature Agent Groq Error for '{title}']: {e}")
+
+            result = """### 1. Research Area
+- Domain: Not specified in the available paper context.
+- Problem: Not specified in the available paper context.
+
+### 2. Main Approach
+Not specified in the available paper context.
+
+### 3. Key Contribution
+Not specified in the available paper context.
+
+### 4. Related Work / Research Direction
+Not specified in the available paper context.
+
+### 5. Research Gap / Limitation
+Not specified in the available paper context.
+
+### 6. Paper Position
+Not specified in the available paper context.
+
+### 7. Quick Takeaway
+Unable to generate literature survey."""
+
+        # --------------------------------------------------
+        # SAVE RESULT
+        # --------------------------------------------------
+
+        results.append({"paper_name": title, "result": result})
+
+    return results
+
+
+# ==========================================================
+# BACKWARD-COMPATIBLE ALIAS
+# ==========================================================
+
+run_literature_survey_agent = run_literature_agent

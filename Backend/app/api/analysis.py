@@ -66,35 +66,64 @@ def format_clean_analysis_output(raw_output) -> str:
     return cleaned.strip()
 
 
+class AnalysisPaper(BaseModel):
+    title: str
+    summary: Optional[str] = None
+    authors: Optional[str] = None
+    published: Optional[str] = None
+    pdf_url: Optional[str] = None
+
+
 class AnalysisRequest(BaseModel):
     paper_name: Optional[str] = None
     paper_names: Optional[List[str]] = None
+    papers: Optional[List[AnalysisPaper]] = None
     query: Optional[str] = None
     analysis_type: Optional[str] = "summary"
-
-
-class WorkspacePaper(BaseModel):
-    title: str
-    authors: Optional[str] = None
-    summary: Optional[str] = None
-    published: Optional[str] = None
-    pdf_url: Optional[str] = None
 
 
 class WorkspaceRequest(BaseModel):
     topic: str
     session_id: str
-    papers: List[WorkspacePaper]
+    papers: List[AnalysisPaper]
 
 
 @router.post("/run")
 async def run_paper_analysis(request: AnalysisRequest):
     try:
         query_map = {
-            "summary": (
-                "Summarize this research paper covering problem, methodology, "
-                "findings, and takeaways."
-            ),
+            "summary": """
+Analyze ONLY this research paper and generate a SHORT structured summary.
+
+Use EXACTLY this format:
+
+### 📌 Research Snapshot
+* **Problem:** Maximum 1-2 concise sentences.
+* **Method:** Maximum 1-2 concise sentences.
+* **Domain:** Mention the research field.
+* **Objective:** Mention the main goal in 1 sentence.
+
+### 📊 Key Findings
+* **Main Result:** Mention the most important finding or metric. If no exact result is provided, write "Not specified in the paper."
+* **Baseline/Comparison:** Mention comparison with existing methods. If unavailable, write "Not specified in the paper."
+
+### ⚠️ Limitations & Future Work
+* **Limitation:** Explicit limitation only. If unavailable, write "Not specified in the paper."
+* **Future Direction:** Explicit future work only. If unavailable, write "Not specified in the paper."
+
+### 💡 Core Takeaways
+1. First important takeaway in one short sentence.
+2. Second important takeaway in one short sentence.
+3. Third important takeaway in one short sentence.
+
+IMPORTANT RULES:
+- Keep the entire summary concise and focused.
+- Do NOT write long paragraphs.
+- Do NOT invent facts, metrics, comparisons, or limitations.
+- Use ONLY information available in the provided paper context.
+- For unavailable information, write exactly: "Not specified in the paper."
+- Do not add an introduction or conclusion outside this format.
+""",
             "literature_survey": (
                 "Provide a structured academic Literature Survey for this paper "
                 "covering Foundations, Methodologies, Comparative Baselines, "
@@ -118,31 +147,72 @@ async def run_paper_analysis(request: AnalysisRequest):
             ),
         }
 
-        active_query = (
-            request.query
-            or query_map.get(
-                request.analysis_type,
-                request.analysis_type
-            )
-        )
+        if request.analysis_type in query_map:
+            active_query = query_map[request.analysis_type]
+        else:
+            active_query = request.query or request.analysis_type
 
         # --------------------------------------------
-        # MULTIPLE SELECTED PAPERS
+        # MULTIPLE SELECTED PAPERS WITH ACTUAL CONTEXT
+        # --------------------------------------------
+        if request.papers and len(request.papers) > 0:
+            paper_results = []
+
+            for paper in request.papers:
+                paper_context = f"""
+You must analyze ONLY this selected research paper.
+
+Paper Title:
+{paper.title}
+
+Authors:
+{paper.authors or "Not specified"}
+
+Published:
+{paper.published or "Not specified"}
+
+Abstract / Paper Summary:
+{paper.summary or "Not specified in the paper."}
+
+PDF URL:
+{paper.pdf_url or "Not specified"}
+"""
+                raw_result = run_agent(
+                    query=active_query,
+                    paper_name=paper.title,
+                    context=paper_context
+                )
+
+                clean_result = format_clean_analysis_output(raw_result)
+
+                paper_results.append(
+                    {
+                        "paper_name": paper.title,
+                        "result": clean_result,
+                    }
+                )
+
+            return {
+                "status": "success",
+                "analysis_type": request.analysis_type,
+                "total_papers": len(paper_results),
+                "results": paper_results,
+                "data": paper_results,
+            }
+
+        # --------------------------------------------
+        # MULTIPLE SELECTED PAPERS (NAMES ONLY)
         # --------------------------------------------
         if request.paper_names and len(request.paper_names) > 0:
-
             paper_results = []
 
             for paper_name in request.paper_names:
-
                 raw_result = run_agent(
                     query=active_query,
                     paper_name=paper_name
                 )
 
-                clean_result = format_clean_analysis_output(
-                    raw_result
-                )
+                clean_result = format_clean_analysis_output(raw_result)
 
                 paper_results.append(
                     {
@@ -179,7 +249,6 @@ async def run_paper_analysis(request: AnalysisRequest):
 
     except Exception as e:
         print(f"Analysis route error: {e}")
-
         raise HTTPException(
             status_code=500,
             detail=str(e)

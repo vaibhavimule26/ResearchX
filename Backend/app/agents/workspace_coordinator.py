@@ -1,3 +1,5 @@
+# File: app/agents/workspace_coordinator.py
+
 from datetime import datetime
 
 from app.database.mongodb import (
@@ -17,8 +19,6 @@ WORKSPACE_AGENTS = [
     "Literature Survey",
     "Novelty Analysis",
     "Comparison",
-    "IEEE Report",
-    "PPT Generator",
 ]
 
 

@@ -1,4 +1,4 @@
-from app.llm.gemini import generate_answer
+from app.llm.multi_api_router import call_cohere_api
 
 
 # ==========================================================
@@ -50,9 +50,9 @@ IMPORTANT RULES:
 - If information is missing, clearly write: "Not specified in the paper."
 """
 
-    return generate_answer(
+    return call_cohere_api(
+        prompt=question,
         context=context,
-        question=question,
     )
 
 
@@ -60,100 +60,79 @@ IMPORTANT RULES:
 # Workspace Summary
 # ==========================================================
 
-def summarize_workspace(topic: str, papers) -> str:
+def summarize_workspace(topic: str, papers) -> list:
     """
-    Generate a structured multi-paper research synthesis.
+    Generate an individual structured summary for every selected paper.
     """
 
-    context_parts = []
+    results = []
 
-    for i, paper in enumerate(papers, start=1):
-        context_parts.append(
-            f"""
-==========================================================
-Paper {i}
-==========================================================
-
-Title:
-{paper.title}
-
-Authors:
-{", ".join(paper.authors)}
-
-Abstract:
-{paper.summary}
-
-Published:
-{paper.published}
-
-Citation Count:
-{getattr(paper, "citation_count", "Not specified")}
-
-Venue:
-{getattr(paper, "venue", "Not specified")}
-
-Source:
-{getattr(paper, "source", "Not specified")}
-"""
+    for paper in papers:
+        title = getattr(paper, "title", "Untitled Paper")
+        
+        authors_raw = getattr(paper, "authors", "Not specified")
+        authors = (
+            ", ".join(authors_raw)
+            if isinstance(authors_raw, list)
+            else (authors_raw or "Not specified")
         )
 
-    context = "\n".join(context_parts)
+        abstract = (
+            getattr(paper, "summary", None)
+            or getattr(paper, "abstract", None)
+            or "Not specified in the available paper context."
+        )
 
-    question = f"""
-You are ResearchX, an expert academic research assistant.
+        published = getattr(paper, "published", "Not specified")
+        citation_count = getattr(paper, "citation_count", "Not specified")
+        venue = getattr(paper, "venue", "Not specified")
+        source = getattr(paper, "source", "Not specified")
 
-Research Topic:
-{topic}
+        paper_context = f"""
+Title:
+{title}
 
-Analyze ONLY the information provided in the papers. Generate a structured multi-paper research synthesis.
+Authors:
+{authors}
 
-Include:
+Abstract / Available Paper Content:
+{abstract}
 
-### 📚 1. Research Overview & Problems
-* **🔍 Overview & Core Problems:** Briefly state the core area and primary challenges addressed across the papers.
+Published:
+{published}
 
----
+Citation Count:
+{citation_count}
 
-### 🔗 2. Common Methods & Trends
-* **⚙️ Methodological Trends:** Highlight recurring approaches, architectures, or benchmark datasets used across the papers.
+Venue:
+{venue}
 
----
-
-### 📈 3. Key Findings & Limitations
-* **📊 Synthesis Findings:** Summarize collective breakthroughs and recurring limitations.
-
----
-
-### 💡 4. Overall Takeaways
-1. **[Synthesis Insight 1]:** High-level takeaway across all reviewed papers.
-2. **[Synthesis Insight 2]:** High-level takeaway across all reviewed papers.
-3. **[Synthesis Insight 3]:** High-level takeaway across all reviewed papers.
-
-IMPORTANT RULES:
-- Keep bullet markers and bold headings properly formatted on the same line.
-- Base every point strictly on the provided papers.
-- Do not invent facts or metrics.
-- If information is unavailable, write: "Not specified in the provided papers."
+Source:
+{source}
 """
 
-    return generate_answer(
-        context=context,
-        question=question,
-    )
+        summary = summarize_paper(paper_context)
+
+        results.append({
+            "paper_name": title,
+            "result": summary,
+        })
+
+    return results
 
 
 # ==========================================================
 # Workspace Summary Agent
 # ==========================================================
 
-def run_summary_agent(topic: str, papers) -> str:
+def run_summary_agent(topic: str, papers) -> list:
     """
-    Execute the Summary Agent for multiple selected papers.
+    Execute the Summary Agent separately for every selected paper.
     """
 
-    print("Running Summary Agent...")
+    print(f"Running Summary Agent for {len(papers)} selected papers...")
 
     return summarize_workspace(
-        topic,
-        papers,
+        topic=topic,
+        papers=papers,
     )
