@@ -25,7 +25,7 @@ load_dotenv(
 def build_user_content(
     prompt: str,
     context: str = "",
-    context_limit: int = 12000
+    context_limit: int = 120000
 ) -> str:
 
     if context:
@@ -57,7 +57,7 @@ def call_cohere_api(prompt: str, context: str = "") -> str:
         user_content = build_user_content(
             prompt,
             context,
-            12000
+            120000
         )
 
         res = co.chat(
@@ -85,25 +85,29 @@ def call_groq_api(prompt: str, context: str = "") -> str:
     api_key = os.getenv("GROQ_API_KEY")
 
     if not api_key:
-        print("[Groq] API key missing. Using Cohere fallback.")
-        return call_cohere_api(prompt, context)
+        print("[Groq] API key missing. Using Mistral / Cohere fallback.")
+        return call_mistral_api(prompt, context)
 
     try:
         from groq import Groq
 
-        client = Groq(api_key=api_key)
+        client = Groq(
+            api_key=api_key,
+            max_retries=1,
+        )
 
         user_content = build_user_content(
             prompt,
             context,
-            12000
+            120000
         )
 
-        # Use available Groq models one by one
+        # Active, high-speed Groq models
         models = [
-            "openai/gpt-oss-20b",
-            "qwen/qwen3.6-27b",
-            "openai/gpt-oss-120b",
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+            "mixtral-8x7b-32768",
+            "gemma2-9b-it",
         ]
 
         for model in models:
@@ -118,12 +122,14 @@ def call_groq_api(prompt: str, context: str = "") -> str:
                             "role": "system",
                             "content": (
                                 "You are ResearchX, an expert academic "
-                                "research assistant. Analyze ONLY the "
-                                "provided research paper context. Never ask "
-                                "the user for additional context. If "
-                                "information is missing, write 'Not specified "
-                                "in the paper.' Do not invent facts, metrics, "
-                                "results, or methods."
+                                "research assistant. Analyze the provided "
+                                "research paper context thoroughly. Synthesize "
+                                "concrete, scholarly, evidence-grounded insights "
+                                "from the paper's title, abstract, methodology, "
+                                "and domain focus. Avoid generic placeholders "
+                                "like 'Not specified' or 'N/A' whenever the "
+                                "technical problem, approach, domain, or "
+                                "limitations can be synthesized from context."
                             )
                         },
                         {
@@ -152,9 +158,8 @@ def call_groq_api(prompt: str, context: str = "") -> str:
     except Exception as e:
         print(f"[Groq Client Error]: {e}")
 
-    print("[Groq] All models failed. Using Cohere fallback.")
-
-    return call_cohere_api(prompt, context)
+    print("[Groq] All models failed. Using Mistral fallback.")
+    return call_mistral_api(prompt, context)
 
 
 # ==========================================================
@@ -171,7 +176,7 @@ def call_mistral_api(prompt: str, context: str = "") -> str:
         user_content = build_user_content(
             prompt,
             context,
-            12000
+            120000
         )
 
         res = requests.post(
@@ -231,7 +236,7 @@ def call_openrouter_api(prompt: str, context: str = "") -> str:
         user_content = build_user_content(
             prompt,
             context,
-            12000
+            120000
         )
 
         res = requests.post(
@@ -290,7 +295,7 @@ def call_gemini_api(prompt: str, context: str = "") -> str:
     user_content = build_user_content(
         prompt,
         context,
-        15000
+        120000
     )
 
     try:

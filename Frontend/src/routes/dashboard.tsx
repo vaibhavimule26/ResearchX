@@ -28,8 +28,16 @@ function DashboardLayout() {
     }
 
     getCurrentUser(token)
-      .then((data) => setUser(data))
-      .catch((err) => console.error(err));
+      .then((data) => {
+        setUser(data);
+      })
+      .catch((err) => {
+        console.error("Authentication failed:", err);
+
+        localStorage.removeItem("token");
+
+        navigate({ to: "/login" });
+      });
   }, [navigate]);
 
   return (
@@ -42,7 +50,6 @@ function DashboardLayout() {
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
-
         <DashboardTopbar
           userName={user.name}
         />
@@ -50,7 +57,6 @@ function DashboardLayout() {
         <main className="scrollbar-thin flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <Outlet />
         </main>
-
       </div>
     </div>
   );

@@ -7,102 +7,54 @@ from app.llm.multi_api_router import call_groq_api
 
 def compare_papers(context: str) -> str:
     """
-    Compare multiple selected research papers using only
-    the provided paper context.
+    Compare multiple selected research papers using evidence-grounded
+    scholarly synthesis and a comprehensive Markdown comparison table.
     """
-
     if not context or not context.strip():
         return (
-            "Unable to compare papers because "
-            "no research paper context was provided."
+            "Unable to compare papers because no research paper context was provided."
         )
 
     question = """
-You are ResearchX, an expert academic research assistant.
+You are a senior academic peer reviewer and research domain expert.
 
-Analyze and compare ONLY the selected research papers provided
-in the context.
+Analyze and compare ONLY the selected research papers provided in the context.
+Synthesize the technical trade-offs, methodological differences, and experimental outcomes in authentic, scholarly academic prose.
 
-Generate a clean and structured comparison in the following format:
+STRICT ACADEMIC WRITING & ANTI-PLAGIARISM RULES:
+1. Paraphrase and synthesize conceptually; do NOT copy full sentences verbatim from abstracts.
+2. Avoid generic AI cliché phrases (e.g., "delve into", "a testament to", "the tapestry of", "it is important to note", "pivotal role", "game-changer", "beacon").
+3. Use precise, active scientific language.
+4. Ground every comparison strictly in the provided paper context.
 
-### 📄 1. Papers Compared
+Generate the output using EXACTLY this structure:
 
-List the titles of all selected papers.
+### 1. Comparative Matrix
 
----
+Generate a structured Markdown table comparing all analyzed papers:
 
-### 🎯 2. Research Objectives
+| Paper | Core Objective | Methodology / Architecture | Datasets & Benchmarks | Key Findings & Metrics | Limitations & Gaps |
+| :--- | :--- | :--- | :--- | :--- | :--- |
 
-For each paper, briefly explain its main research objective.
-
----
-
-### ⚙️ 3. Methodology Comparison
-
-Compare the methods, frameworks, architectures, models, or
-algorithms used by the selected papers.
-
-Clearly mention important similarities and differences.
+(Fill one complete row per paper. Keep cell entries concise and factual. If information is not available, write "Not specified".)
 
 ---
 
-### 📊 4. Datasets and Evaluation
-
-For each paper:
-- Mention datasets or benchmarks used.
-- Mention evaluation metrics if available.
-- If not specified, write: "Not specified in the paper."
+### 2. Methodological Trade-offs & Differences
+Provide a concise 2-3 paragraph technical critique comparing how the proposed models/architectures differ in computational complexity, inductive biases, and architectural design choices.
 
 ---
 
-### 🔬 5. Key Findings
-
-For each paper, briefly state its important findings or
-reported results.
-
-Then identify the major differences between the findings.
+### 3. Experimental & Empirical Comparison
+Detail the benchmark datasets, evaluation criteria, and empirical outcomes reported across the papers. Highlight where approaches excel or fall short.
 
 ---
 
-### 💪 6. Strengths and Limitations
-
-For each paper:
-
-**Paper: [Paper Title]**
-* **Strength:** Brief strength based only on the provided context.
-* **Limitation:** Brief limitation, or "Not specified in the paper."
-
----
-
-### 🔮 7. Future Research Directions
-
-Compare future work or research directions mentioned across
-the selected papers.
-
-If unavailable, write:
-"Not specified in the provided papers."
-
----
-
-### 💡 8. Final Comparison Summary
-
-Provide 3 concise comparison insights:
-
-1. **[Main Similarity]:** Key similarity across the papers.
-2. **[Main Difference]:** Most important difference between the papers.
-3. **[Overall Insight]:** Which approach appears most suitable for
-   its stated objective, based only on the provided information.
-
-IMPORTANT RULES:
-- Analyze ONLY the provided paper context.
-- Do NOT ask the user for additional information.
-- Do NOT invent datasets, metrics, results, methods, or citations.
-- If information is missing, write:
-  "Not specified in the paper."
-- Keep the output concise, structured, and professional.
-- Use proper Markdown headings and bullet points.
-- If fewer than two papers are provided, clearly state that
-  meaningful comparison requires at least two papers.
+### 4. Cross-Study Synthesis & Future Vectors
+Summarize the primary consensus, biggest unaddressed challenge across the papers, and the most promising future research vector in 3 crisp numbered takeaways:
+1. **Consensus:** Primary shared insight or confirmed finding.
+2. **Key Divergence:** Core technical trade-off between the approaches.
+3. **Open Vector:** Most critical unaddressed problem requiring future investigation.
 """
 
     return call_groq_api(
@@ -120,6 +72,9 @@ def run_comparison_agent(topic: str, papers) -> str:
     Execute the Comparison Agent for all selected papers.
     """
 
+    if not papers:
+        return "No research papers were provided for comparative analysis."
+
     print(
         f"Running Comparison Agent for {len(papers)} selected papers..."
     )
@@ -128,11 +83,25 @@ def run_comparison_agent(topic: str, papers) -> str:
 
     for index, paper in enumerate(papers, start=1):
 
-        authors = (
-            ", ".join(paper.authors)
-            if isinstance(paper.authors, list)
-            else (paper.authors or "Not specified")
-        )
+        if isinstance(paper, dict):
+            title = paper.get("title", "Untitled Paper")
+            authors = paper.get("authors", "Not specified")
+            summary = paper.get("summary") or paper.get("abstract", "Not specified")
+            published = paper.get("published", "Not specified")
+            citation_count = paper.get("citation_count") or paper.get("citations", "Not specified")
+            venue = paper.get("venue", "Not specified")
+            source = paper.get("source", "Not specified")
+        else:
+            title = getattr(paper, "title", "Untitled Paper")
+            authors = getattr(paper, "authors", "Not specified")
+            summary = getattr(paper, "summary", None) or getattr(paper, "abstract", "Not specified")
+            published = getattr(paper, "published", "Not specified")
+            citation_count = getattr(paper, "citation_count", None) or getattr(paper, "citations", "Not specified")
+            venue = getattr(paper, "venue", "Not specified")
+            source = getattr(paper, "source", "Not specified")
+
+        if isinstance(authors, list):
+            authors = ", ".join(map(str, authors))
 
         context_parts.append(
             f"""
@@ -141,25 +110,25 @@ PAPER {index}
 ==========================================================
 
 Title:
-{paper.title}
+{title}
 
 Authors:
 {authors}
 
 Abstract / Summary:
-{paper.summary or "Not specified"}
+{summary}
 
 Published:
-{paper.published or "Not specified"}
+{published}
 
 Citation Count:
-{getattr(paper, "citation_count", "Not specified")}
+{citation_count}
 
 Venue:
-{getattr(paper, "venue", "Not specified")}
+{venue}
 
 Source:
-{getattr(paper, "source", "Not specified")}
+{source}
 """
         )
 

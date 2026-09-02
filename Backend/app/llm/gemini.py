@@ -64,21 +64,20 @@ def generate_answer(
     if not question or not question.strip():
         return "No research question was provided."
 
-    prompt = f"""You are ResearchX, an AI Research Assistant.
+    prompt = f"""You are ResearchX, an advanced AI Academic Research Assistant.
 
-Analyze the provided research paper and answer the question accurately.
+Analyze the provided research paper context thoroughly and synthesize an accurate, detailed, and scholarly answer.
 
-IMPORTANT RULES:
-1. Use ONLY the provided paper.
-2. Never invent facts, datasets, metrics, or citations.
-3. If information is unavailable, state: "Not specified in the paper."
-4. Do NOT use emojis or special icon characters.
-5. Provide a complete, structured academic answer.
+GUIDELINES:
+1. Ground your analysis in the provided paper context (title, abstract, methodology, results, and problem formulation).
+2. Synthesize concrete academic insights. Avoid generic placeholders like "Not specified", "N/A", or "Not available".
+3. Provide a complete, well-structured scholarly answer with clear technical reasoning.
+4. Do NOT use emojis or informal commentary.
 
 RESEARCH PAPER:
 {context}
 
-QUESTION:
+QUESTION / TASK:
 {question}
 """
 

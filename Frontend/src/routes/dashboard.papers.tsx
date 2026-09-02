@@ -49,6 +49,7 @@ const YEAR_TABS = [
 ];
 
 const SORT_OPTIONS = [
+  { id: "relevance", label: "Most Relevant" },
   { id: "year_desc", label: "Chronological (Latest First)" },
   { id: "citations_desc", label: "Most Cited / Landmark Impact" },
   { id: "year_asc", label: "Evolution Timeline (Oldest First)" },
@@ -62,7 +63,7 @@ function PaperSearch() {
   const [activeQuery, setActiveQuery] = useState(search.paper ?? "Retrieval Augmented Generation");
   const [papers, setPapers] = useState<ResearchPaper[]>([]);
   const [selectedYear, setSelectedYear] = useState("all");
-  const [sortBy, setSortBy] = useState("year_desc");
+  const [sortBy, setSortBy] = useState("relevance");
   const [loading, setLoading] = useState(false);
   const [loadingPaper, setLoadingPaper] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);

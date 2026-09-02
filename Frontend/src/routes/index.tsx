@@ -16,7 +16,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "ResearchX —AI Multi-Agent Research Assistant" },
+      { title: "ResearchX — AI Multi-Agent Research Assistant" },
       {
         name: "description",
         content:
@@ -33,11 +33,9 @@ export const Route = createFileRoute("/")({
 });
 
 function LandingPage() {
-  
   return (
-  <div className="relative min-h-screen overflow-x-hidden bg-background scroll-smooth">
-    <Navbar />
-      
+    <div className="relative min-h-screen overflow-x-hidden bg-background scroll-smooth">
+      <Navbar />
       <Hero />
       <Stats />
       <Features />
@@ -60,13 +58,13 @@ function Hero() {
       <FloatingParticles />
       <div className="mx-auto grid max-w-7xl items-center gap-14 px-4 sm:px-6 lg:grid-cols-2 lg:gap-20 lg:px-8">
         <motion.div
-  initial={{ opacity: 0, y: 40 }}
-  animate={{ opacity: 1, y: 0 }}
-  transition={{
-    duration: 0.8,
-    ease: "easeOut",
-  }}
->
+          initial={{ opacity: 0, y: 40 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{
+            duration: 0.8,
+            ease: "easeOut",
+          }}
+        >
           <div className="inline-flex items-center gap-2 rounded-full glass px-3 py-1.5 text-xs">
             <span className="flex h-2 w-2">
               <span className="absolute h-2 w-2 animate-ping rounded-full bg-[var(--electric)]/60" />
@@ -76,9 +74,7 @@ function Hero() {
           </div>
           <h1 className="mt-6 font-display text-5xl font-bold leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl">
             AI Multi-Agent <br />
-<span className="gradient-text">
-Research Assistant
-</span>
+            <span className="gradient-text">Research Assistant</span>
           </h1>
           <p className="mt-6 max-w-xl text-lg text-muted-foreground">
             ResearchX automates the complete research workflow — from paper discovery and
@@ -86,49 +82,39 @@ Research Assistant
             and presentation creation. One platform. Ten agents. Endless research.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
-  <span className="rounded-full border border-border/60 px-4 py-2 text-sm">
-    ✓ 10 AI Agents
-  </span>
-
-  <span className="rounded-full border border-border/60 px-4 py-2 text-sm">
-    ✓ RAG Powered
-  </span>
-
-  <span className="rounded-full border border-border/60 px-4 py-2 text-sm">
-    ✓ IEEE Reports
-  </span>
-
-  <span className="rounded-full border border-border/60 px-4 py-2 text-sm">
-    ✓ PPT Generator
-  </span>
-</div>
+            <span className="rounded-full border border-border/60 px-4 py-2 text-sm">
+              ✓ 10 AI Agents
+            </span>
+            <span className="rounded-full border border-border/60 px-4 py-2 text-sm">
+              ✓ RAG Powered
+            </span>
+            <span className="rounded-full border border-border/60 px-4 py-2 text-sm">
+              ✓ IEEE Reports
+            </span>
+            <span className="rounded-full border border-border/60 px-4 py-2 text-sm">
+              ✓ PPT Generator
+            </span>
+          </div>
           <div className="mt-6 flex flex-wrap gap-3">
-  <Button asChild variant="hero" size="lg">
-    <Link to="/register">
-      Get Started Free
-    </Link>
-  </Button>
-
-  <Button asChild variant="outline" size="lg">
-    <a href="#features">
-      Learn More
-    </a>
-  </Button>
-
- <Button asChild variant="glass" size="lg">
-  <Link to="/demo">
-    <Play className="mr-2 h-4 w-4" />
-    Watch Demo
-  </Link>
-</Button>
-
-<Button asChild variant="ghost" size="lg">
-  <Link to="/book-demo">
-    <Calendar className="mr-2 h-4 w-4" />
-    Book Demo
-  </Link>
-</Button>
-</div>
+            <Button asChild variant="hero" size="lg">
+              <Link to="/register">Get Started Free</Link>
+            </Button>
+            <Button asChild variant="outline" size="lg">
+              <a href="#features">Learn More</a>
+            </Button>
+            <Button asChild variant="glass" size="lg">
+              <Link to="/demo">
+                <Play className="mr-2 h-4 w-4" />
+                Watch Demo
+              </Link>
+            </Button>
+            <Button asChild variant="ghost" size="lg">
+              <Link to="/book-demo">
+                <Calendar className="mr-2 h-4 w-4" />
+                Book Demo
+              </Link>
+            </Button>
+          </div>
           <div className="mt-10 flex items-center gap-6 text-xs text-muted-foreground">
             <div>
               <div className="flex">
@@ -178,8 +164,8 @@ function HeroVisual() {
       ].map((n, i) => {
         const r = 180;
         const rad = (n.angle * Math.PI) / 180;
-        const x = Math.cos(rad) * r;
-        const y = Math.sin(rad) * r;
+        const x = Math.round(Math.cos(rad) * r);
+        const y = Math.round(Math.sin(rad) * r);
         return (
           <motion.div
             key={i}
@@ -205,17 +191,15 @@ function HeroVisual() {
       >
         <div className="text-[10px] uppercase tracking-wide text-[var(--electric)]">Paper</div>
         <div className="mt-1 text-sm font-semibold">
-    Attention Is All You Need
-</div>
-
-<div className="mt-1 text-[11px] text-muted-foreground">
-    Vaswani et al. • NeurIPS 2017
-</div>
-
-<div className="mt-3 flex items-center justify-between text-[11px]">
-    <span>Citations</span>
-    <span className="font-semibold">132K+</span>
-</div>
+          Attention Is All You Need
+        </div>
+        <div className="mt-1 text-[11px] text-muted-foreground">
+          Vaswani et al. • NeurIPS 2017
+        </div>
+        <div className="mt-3 flex items-center justify-between text-[11px]">
+          <span>Citations</span>
+          <span className="font-semibold">132K+</span>
+        </div>
       </motion.div>
       <motion.div
         className="absolute -right-2 bottom-12 w-48 rounded-2xl glass p-3"
@@ -320,7 +304,7 @@ function Stats() {
   );
 }
 
-//* ---------------- FEATURES ---------------- */
+/* ---------------- FEATURES ---------------- */
 const FEATURES = [
   { icon: Search, title: "Paper Retrieval", desc: "Semantic search across 5M+ papers from arXiv, IEEE, ACM, Springer." },
   { icon: FileText, title: "PDF Analysis", desc: "Multi-page parsing, chunking, citation extraction and OCR." },
@@ -432,7 +416,6 @@ function Workflow() {
         />
 
         <div className="relative mt-16">
-
           <div className="absolute left-0 right-0 top-12 hidden h-px bg-gradient-to-r from-transparent via-primary/30 to-transparent lg:block" />
 
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-5">
@@ -461,7 +444,6 @@ function Workflow() {
                 />
 
                 <div className="relative z-10">
-
                   <div className="flex items-center justify-between">
                     <motion.div
                       whileHover={{
@@ -491,7 +473,6 @@ function Workflow() {
                     Active Agent
                     <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1" />
                   </div>
-
                 </div>
               </motion.div>
             ))}
@@ -514,7 +495,6 @@ function Workflow() {
               Final Research Package
             </span>
           </div>
-
         </div>
       </div>
     </section>
@@ -558,9 +538,7 @@ function AgentShowcase() {
               />
 
               <div className="relative z-10">
-
                 <div className="flex items-start justify-between">
-
                   <motion.div
                     whileHover={{
                       rotate: 8,
@@ -576,7 +554,6 @@ function AgentShowcase() {
                     <span className="h-2 w-2 animate-pulse rounded-full bg-[var(--success)]" />
                     Online
                   </span>
-
                 </div>
 
                 <h3 className="mt-5 text-base font-semibold">
@@ -611,7 +588,6 @@ function AgentShowcase() {
                     />
                   </div>
                 </div>
-
               </div>
             </motion.div>
           ))}
@@ -620,6 +596,7 @@ function AgentShowcase() {
     </section>
   );
 }
+
 /* ---------------- COMPARISON ---------------- */
 function Comparison() {
   const rows = [
@@ -755,7 +732,6 @@ function Testimonials() {
               />
 
               <div className="relative z-10">
-
                 <Quote className="h-8 w-8 text-[var(--purple-glow)]" />
 
                 <div className="mt-4 flex gap-1">
@@ -790,7 +766,6 @@ function Testimonials() {
                     </div>
                   </div>
                 </div>
-
               </div>
             </motion.div>
           ))}
@@ -799,6 +774,7 @@ function Testimonials() {
     </section>
   );
 }
+
 /* ---------------- FAQ ---------------- */
 function FAQ() {
   const faqs = [
@@ -839,7 +815,6 @@ function CTA() {
   return (
     <section className="relative py-24">
       <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
-
         <motion.div
           initial={{ opacity: 0, scale: 0.96 }}
           whileInView={{ opacity: 1, scale: 1 }}
@@ -847,7 +822,6 @@ function CTA() {
           transition={{ duration: 0.6 }}
           className="relative overflow-hidden rounded-[32px] border border-white/10 glass-strong px-8 py-16 shadow-2xl sm:px-16"
         >
-
           <div className="absolute inset-0 gradient-primary-bg opacity-15" />
           <div className="absolute inset-0 grid-bg opacity-30" />
 
@@ -855,7 +829,6 @@ function CTA() {
           <div className="absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-[var(--purple-glow)]/20 blur-3xl" />
 
           <div className="relative text-center">
-
             <span className="inline-flex items-center gap-2 rounded-full glass px-4 py-2 text-sm font-medium text-[var(--electric)]">
               🚀 AI Powered Research Platform
             </span>
@@ -874,7 +847,6 @@ function CTA() {
             </p>
 
             <div className="mt-10 flex flex-wrap justify-center gap-4">
-
               <Button asChild variant="hero" size="lg">
                 <Link to="/register">
                   Get Started Free
@@ -887,11 +859,9 @@ function CTA() {
                   Login
                 </Link>
               </Button>
-
             </div>
 
             <div className="mt-12 grid gap-6 sm:grid-cols-3">
-
               <div>
                 <h3 className="text-3xl font-bold gradient-text">
                   5M+
@@ -918,11 +888,8 @@ function CTA() {
                   Active Researchers
                 </p>
               </div>
-
             </div>
-
           </div>
-
         </motion.div>
       </div>
     </section>

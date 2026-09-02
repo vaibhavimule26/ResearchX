@@ -6,6 +6,8 @@ from app.database.chroma import collection
 from app.pdf.extractor import extract_text_from_pdf
 from app.chunking.chunker import chunk_text
 from app.embeddings.embedder import create_embeddings
+from app.rag.embeddings import create_embeddings as create_rag_embeddings
+from app.rag.retriever import index_paper
 from app.utils.response import success_response
 
 import shutil
@@ -151,6 +153,24 @@ async def upload_pdf(file: UploadFile = File(...)):
             )
 
         # ==========================
+        # RAG ChromaDB Index
+        # ==========================
+        rag_embeddings = create_rag_embeddings(
+            chunks
+        )
+
+        index_paper(
+            paper_id=file.filename,
+            chunks=chunks,
+            embeddings=rag_embeddings,
+            metadata={
+                "paper_name": file.filename,
+                "title": file.filename,
+                "uploaded_at": uploaded_at
+            }
+        )
+
+        # ==========================
         # Store Document in MongoDB
         # ==========================
         result = papers_collection.insert_one(
@@ -158,14 +178,14 @@ async def upload_pdf(file: UploadFile = File(...)):
         )
 
         return success_response(
-    message="PDF uploaded successfully",
-    data={
-        "filename": file.filename,
-        "paper_id": str(result.inserted_id),
-        "characters": len(text),
-        "chunks": len(chunks)
-    }
-)
+            message="PDF uploaded successfully",
+            data={
+                "filename": file.filename,
+                "paper_id": str(result.inserted_id),
+                "characters": len(text),
+                "chunks": len(chunks)
+            }
+        )
     except HTTPException:
         raise
 
@@ -189,15 +209,15 @@ async def get_papers():
     papers = []
 
     for paper in papers_collection.find(
-    {},
-    {
-        "_id": 0,
-        "embeddings": 0,
-        "text": 0,
-        "chunks": 0
-    }
-):
-     papers.append(paper)
+        {},
+        {
+            "_id": 0,
+            "embeddings": 0,
+            "text": 0,
+            "chunks": 0
+        }
+    ):
+        papers.append(paper)
 
     return success_response(
         message="Papers retrieved successfully",
@@ -206,8 +226,9 @@ async def get_papers():
             "total": len(papers)
         }
     )
-    
-    # ==========================
+
+
+# ==========================
 # Download PDF
 # ==========================
 @router.get("/papers/{filename}")
@@ -236,6 +257,8 @@ async def download_paper(filename: str):
         filename=filename,
         media_type="application/pdf",
     )
+
+
 # ==========================
 # Delete Uploaded Paper
 # ==========================
@@ -295,11 +318,11 @@ async def delete_paper(filename: str):
             os.remove(file_path)
 
         return success_response(
-    message="Paper deleted successfully",
-    data={
-        "filename": filename
-    }
-)
+            message="Paper deleted successfully",
+            data={
+                "filename": filename
+            }
+        )
     except Exception as error:
         raise HTTPException(
             status_code=500,

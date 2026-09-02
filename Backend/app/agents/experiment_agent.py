@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from app.llm.gemini import generate_answer
 from app.llm.multi_api_router import call_groq_api
@@ -10,8 +10,8 @@ from app.llm.multi_api_router import call_groq_api
 
 def plan_experiments(context: str) -> str:
     """
-    Generate a detailed experiment and validation protocol
-    for one research paper.
+    Generate a concise, high-impact experiment recommendation and validation protocol
+    for one research paper based on its research problem, methodology, and objectives.
     """
 
     if not context or not context.strip():
@@ -21,99 +21,33 @@ def plan_experiments(context: str) -> str:
         )
 
     question = """
-Analyze ONLY the provided research paper context.
+You are the Senior Experimental Design & Evaluation Architect at ResearchX.
 
-Act as a research experiment planning assistant.
+MOTIVE & OBJECTIVE:
+Identify and recommend appropriate experiments and evaluation techniques for this research paper based on its research problem, methodology, and objectives. Provide a concise, high-impact experimental plan.
 
-Create a practical experimental replication and validation protocol.
+STRICT CONCISENESS RULE: Keep the total output under 180 words. Focus strictly on essential experimental steps and metrics.
 
-Use EXACTLY this Markdown structure:
+Use EXACTLY this structure:
 
-### 1. Experimental Objective
-- **Objective:** State the main experiment objective based only on the paper.
-- **Hypothesis:** State one testable hypothesis.
-- If unavailable, write: Not specified in paper.
-
----
-
-### 2. Experiment Setup
-- **Dataset:** Use the dataset explicitly mentioned in the paper.
-- **Model/Method:** Use the model, method, or system mentioned in the paper.
-- **Configuration:** Include important settings only if specified.
-- Do NOT invent datasets or model configurations.
+### 1. Core Hypothesis & Validation Objective
+- **Primary Hypothesis:** One crisp sentence predicting the advantage of the proposed approach.
+- **Key Evaluation Metrics:** Primary quantitative metrics (e.g. Accuracy, F1 Score, Latency/Throughput, BLEU/ROUGE).
 
 ---
 
-### 3. Evaluation Metrics
-- List ONLY metrics explicitly named in the paper.
-- Do NOT convert objectives, claims, expected benefits, features,
-or general concepts into metrics.
-- If no explicit metric is named, write exactly:
-Not specified in paper.
+### 2. Recommended Experiments Matrix
+
+| Phase | Experimental Objective | Proposed Method vs Baseline | Target Evaluation Metric | Expected Validation Outcome |
+| :--- | :--- | :--- | :--- | :--- |
+| **1. Comparative Benchmark** | Primary comparative evaluation | Proposed model vs SOTA baselines | Primary accuracy/performance metrics | Demonstrates statistically significant gain |
+| **2. Ablation & Efficiency** | Component contribution & speed | Proposed system with/without key modules | Latency (ms) / FLOPs / Memory | Quantifies efficiency vs accuracy trade-offs |
 
 ---
 
-### 4. Step-by-Step Experiment
-Generate steps ONLY from an experiment, procedure, workflow,
-validation process, or methodology explicitly described in the paper.
-
-Do NOT create new experimental steps.
-
-For each missing step, write exactly:
-Not specified in paper.
-
-Use this format:
-
-1. Prepare the data or input:
-   - Extract only explicitly described preparation steps.
-   - Otherwise: Not specified in paper.
-
-2. Set up the model/method:
-   - Extract only explicitly described setup steps.
-   - Otherwise: Not specified in paper.
-
-3. Run the experiment:
-   - Extract only explicitly described execution steps.
-   - Otherwise: Not specified in paper.
-
-4. Measure the specified metrics:
-   - Use only explicitly named metrics.
-   - Otherwise: Not specified in paper.
-
-5. Compare the result:
-   - Extract only explicitly described comparison or validation procedures.
-   - Otherwise: Not specified in paper.
-
----
-
-### 5. Expected Result
-- Extract only an expected result, finding, or conclusion explicitly
-reported in the paper.
-- Do NOT predict a new result.
-- Do NOT say "expected to show" unless the paper itself describes this.
-- If unavailable, write exactly: Not specified in paper.
-
-STRICT RULES:
-- Analyze ONLY the provided paper context.
-- Do NOT recommend external datasets.
-- Do NOT recommend datasets not named in the paper.
-- Do NOT invent hypotheses.
-- Do NOT invent baselines or comparisons.
-- Do NOT invent traditional methods.
-- Do NOT invent teacher feedback, human evaluation, peer review,
-or Turing tests.
-- Do NOT invent environments, dynamic obstacles, uncertainty levels,
-or simulation procedures.
-- Do NOT invent metrics from general objectives.
-- Do NOT invent dataset splits.
-- Do NOT invent hyperparameters.
-- Do NOT invent hardware or software.
-- Do NOT infer that a model "improves", "outperforms", or is
-"effective" unless explicitly reported in the paper.
-- When information is missing, write exactly:
-Not specified in paper.
-- Prefer "Not specified in paper" over making an inference.
-- Keep the response concise and based strictly on extracted evidence.
+### 3. Key Execution Protocol
+- **Data & Split:** Standard 70/15/15 train/val/test or official benchmark split with uniform preprocessing.
+- **Validation Protocol:** 5-fold cross-validation or paired statistical significance testing under controlled hardware settings.
 """
 
     try:
@@ -136,8 +70,8 @@ def run_experiment_agent(
     papers: List[Any]
 ) -> List[Dict[str, str]]:
     """
-    Generate one short experiment recommendation
-    for each research paper.
+    Generate concise, high-impact experiment recommendations and evaluation techniques
+    for each selected research paper.
     """
 
     results = []
@@ -161,14 +95,20 @@ def run_experiment_agent(
             summary = (
                 paper.get("abstract")
                 or paper.get("summary")
-                or "Not specified in paper."
+                or paper.get("why_chosen")
+                or paper.get("key_contribution")
+                or f"Research investigation on {topic} focusing on {title}."
             )
+            venue = paper.get("venue") or ""
         else:
             summary = (
                 getattr(paper, "abstract", None)
                 or getattr(paper, "summary", None)
-                or "Not specified in paper."
+                or getattr(paper, "why_chosen", None)
+                or getattr(paper, "key_contribution", None)
+                or f"Research investigation on {topic} focusing on {title}."
             )
+            venue = getattr(paper, "venue", "")
 
         # --------------------------------------------------
         # GET PUBLISHED DATE
@@ -187,8 +127,11 @@ def run_experiment_agent(
 Title:
 {title}
 
-Abstract:
+Abstract / Focus:
 {summary}
+
+Venue / Source:
+{venue}
 
 Published:
 {published}
@@ -199,58 +142,59 @@ Published:
         # --------------------------------------------------
 
         question = f"""
-Analyze ONLY this research paper.
+You are the Senior Experimental Design & Evaluation Architect at ResearchX.
 
-Research Topic:
-{topic}
+MOTIVE & OBJECTIVE:
+Identify and recommend appropriate experiments and evaluation techniques for this research paper based on its research problem, methodology, and objectives.
 
-Generate ONE small and practical experiment that can be
-performed to validate or reproduce the main idea of this paper.
+Paper Title: {title}
+Research Topic: {topic}
+
+STRICT CONCISENESS RULE: Keep the entire output under 140 words. Focus strictly on key validation experiments and metrics.
 
 Use EXACTLY this format:
 
-### Small Experiment
-- **Objective:** One short sentence based on the paper.
-- **Setup:** Mention only the dataset, model, method, or input explicitly described in the paper. If unavailable, write "Not specified in paper".
-- **Metrics:** Maximum 3 metrics. Use only metrics mentioned in the paper. If unavailable, write "Not specified in paper".
-- **Expected Output:** One short sentence based on the paper.
+### 1. Core Validation Objective
+- **Hypothesis:** 1 crisp sentence stating the primary testable claim and expected performance gain.
+- **Key Metrics:** Primary evaluation metrics (e.g. Accuracy, F1 Score, Latency/Throughput, BLEU/ROUGE).
 
-STRICT RULES:
-- Maximum 100 words total.
-- Exactly 4 bullet points.
-- Analyze ONLY this paper.
-- Do NOT recommend external datasets.
-- Do NOT recommend multiple datasets.
-- Do NOT invent dataset names.
-- Do NOT invent model names.
-- Do NOT invent metrics.
-- Do NOT invent train/test splits.
-- Do NOT add baselines.
-- Do NOT add implementation details.
-- Do NOT add explanations outside the required format.
-- If exact information is unavailable, write "Not specified in paper".
+---
+
+### 2. Recommended Experiment & Validation Matrix
+
+| Phase | Objective | Proposed Setup vs Baseline | Validation Metric | Target Outcome |
+| :--- | :--- | :--- | :--- | :--- |
+| **1. Comparative Benchmark** | Primary comparative evaluation | Proposed model vs standard baselines | Primary task metrics | Statistically significant improvement |
+| **2. Ablation & Efficiency** | Component contribution & speed | Proposed system with/without key components | Latency (ms) / Memory (MB) | Quantifies efficiency-accuracy trade-off |
+
+---
+
+### 3. Execution Notes
+- **Data & Protocol:** Benchmark split (e.g. 70/15/15) with standard task preprocessing.
+- **Validation:** 5-fold cross-validation or paired significance testing under controlled hyperparameters.
 """
 
         # --------------------------------------------------
-        # CALL LLM
+        # CALL LLM WITH RESILIENT CASCADE
         # --------------------------------------------------
 
+        result = ""
         try:
             result = call_groq_api(
                 prompt=question,
                 context=paper_context
             )
-
         except Exception as e:
-            print(
-                f"[Experiment Agent Groq Error for '{title}']: {e}"
-            )
+            print(f"[Experiment Agent Groq Error for '{title}']: {e}")
 
-            result = """### Small Experiment
-- **Objective:** Not specified in paper.
-- **Setup:** Not specified in paper.
-- **Metrics:** Not specified in paper.
-- **Expected Output:** Unable to generate experiment recommendation."""
+        if not result or len(result.strip()) < 50:
+            try:
+                result = generate_answer(
+                    context=paper_context,
+                    question=question
+                )
+            except Exception as e:
+                print(f"[Experiment Agent Gemini Error for '{title}']: {e}")
 
         # --------------------------------------------------
         # SAVE RESULT
@@ -258,7 +202,7 @@ STRICT RULES:
 
         results.append({
             "paper_name": title,
-            "result": result
+            "result": result.strip() if result else "Unable to generate experiment recommendation for this paper."
         })
 
     return results

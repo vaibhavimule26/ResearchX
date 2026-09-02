@@ -9,6 +9,7 @@ import urllib3
 from typing import Optional, List, Dict, Any
 
 from app.llm.gemini import generate_answer
+from app.services.similarity_service import calculate_similarity
 from app.llm.multi_api_router import (
     call_cohere_api,
     call_groq_api,
@@ -66,7 +67,7 @@ Return ONLY a raw JSON array of objects without conversational filler:
     "abstract": "...",
     "why_chosen": "This paper is essential for '{query}' because...",
     "key_contribution": "...",
-    "pdf_url": "https://arxiv.org/abs/..."
+    "pdf_url": "[https://arxiv.org/abs/](https://arxiv.org/abs/)..."
   }}
 ]"""
 
@@ -115,7 +116,7 @@ def search_arxiv_live(query: str, limit: int = 6) -> list[dict]:
     try:
         clean_q = re.sub(r'[^a-zA-Z0-9\s]', '', query).strip()
         encoded_query = urllib.parse.quote(f'ti:"{clean_q}" OR abs:"{clean_q}" OR all:"{clean_q}"')
-        url = f"https://export.arxiv.org/api/query?search_query={encoded_query}&start=0&max_results={limit}&sortBy=submittedDate&sortOrder=descending"
+        url = f"[https://export.arxiv.org/api/query?search_query=](https://export.arxiv.org/api/query?search_query=){encoded_query}&start=0&max_results={limit}&sortBy=submittedDate&sortOrder=descending"
 
         res = requests.get(
             url,
@@ -127,7 +128,7 @@ def search_arxiv_live(query: str, limit: int = 6) -> list[dict]:
             return []
 
         root = ET.fromstring(res.content)
-        ns = {'atom': 'http://www.w3.org/2005/Atom'}
+        ns = {'atom': '[http://www.w3.org/2005/Atom](http://www.w3.org/2005/Atom)'}
         papers = []
 
         for entry in root.findall('atom:entry', ns):
@@ -148,7 +149,7 @@ def search_arxiv_live(query: str, limit: int = 6) -> list[dict]:
             authors_str = ", ".join(authors[:3]) + (" et al." if len(authors) > 3 else "")
 
             raw_id = id_elem.text if id_elem is not None and id_elem.text else ""
-            pdf_link = raw_id.replace("abs", "pdf") + ".pdf" if "abs" in raw_id else f"https://arxiv.org/search/?query={urllib.parse.quote(title)}&searchtype=all"
+            pdf_link = raw_id.replace("abs", "pdf") + ".pdf" if "abs" in raw_id else f"[https://arxiv.org/search/?query=](https://arxiv.org/search/?query=){urllib.parse.quote(title)}&searchtype=all"
 
             if len(summary) > 40:
                 papers.append({
@@ -232,10 +233,10 @@ def search_academic_papers(
         abstract_text = p.get("abstract") or p.get("summary") or "Comprehensive architectural analysis and benchmark results."
         why_chosen_text = p.get("why_chosen") or f"Pioneering research benchmark in {clean_query} with verified architectural performance."
         key_contrib = p.get("key_contribution") or f"Core algorithmic and empirical methodology for {clean_query}."
-        venue_str = p.get("venue") or "IEEE / ACM Conference"
+        venue_str = p.get("venue") or "Academic Source"
         authors_val = p.get("authors") or "Primary Investigators"
         
-        pdf_link = p.get("pdf_url") or p.get("url") or f"https://scholar.google.com/scholar?q={urllib.parse.quote(raw_title)}"
+        pdf_link = p.get("pdf_url") or p.get("url") or f"[https://scholar.google.com/scholar?q=](https://scholar.google.com/scholar?q=){urllib.parse.quote(raw_title)}"
 
         # Deterministic ID based on title and year
         stable_id = f"paper_{year_int}_{hashlib.md5(norm_key.encode('utf-8')).hexdigest()[:8]}"
@@ -273,7 +274,18 @@ def search_academic_papers(
             "tags": [str(year_int), venue_str, relevance_badge]
         })
 
-    # 3. Optional Year Filtering
+    # 3. Semantic relevance scoring using MiniLM
+    deduped_papers = calculate_similarity(
+        clean_query,
+        deduped_papers
+    )
+    for paper in deduped_papers:
+        paper["relevance_score"] = max(
+            0.0,
+            min(1.0, paper.get("semantic_score", 0.0))
+        )
+
+    # 4. Optional Year Filtering
     if filter_year and filter_year.strip().lower() != "all":
         fy = filter_year.strip().lower()
         if fy == "foundational":
@@ -284,15 +296,44 @@ def search_academic_papers(
             target_y = int(fy)
             deduped_papers = [p for p in deduped_papers if p["year"] == target_y]
 
-    # 4. Strict Deterministic Sorting (Zero Shuffling)
+    # 5. Deterministic Sorting
     if sort_by == "citations_desc":
-        # Highest citations first, then latest year, then title
-        deduped_papers.sort(key=lambda p: (-p["citations"], -p["year"], p["title"]))
+        deduped_papers.sort(
+            key=lambda p: (
+                -p.get("citations", 0),
+                -p.get("relevance_score", 0),
+                -p.get("year", 0),
+                p.get("title", "")
+            )
+        )
     elif sort_by == "year_asc":
-        # Evolution timeline (oldest to newest)
-        deduped_papers.sort(key=lambda p: (p["year"], -p["citations"], p["title"]))
+        deduped_papers.sort(
+            key=lambda p: (
+                p.get("year", 0),
+                -p.get("relevance_score", 0),
+                -p.get("citations", 0),
+                p.get("title", "")
+            )
+        )
+    elif sort_by == "year_desc":
+        # Latest first, but relevance decides order within same/latest years
+        deduped_papers.sort(
+            key=lambda p: (
+                -p.get("year", 0),
+                -p.get("relevance_score", 0),
+                -p.get("citations", 0),
+                p.get("title", "")
+            )
+        )
     else:
-        # Default: Latest year first, then highest citations, then title
-        deduped_papers.sort(key=lambda p: (-p["year"], -p["citations"], p["title"]))
+        # MOST RELEVANT
+        deduped_papers.sort(
+            key=lambda p: (
+                -p.get("relevance_score", 0),
+                -p.get("year", 0),
+                -p.get("citations", 0),
+                p.get("title", "")
+            )
+        )
 
     return deduped_papers[:limit]

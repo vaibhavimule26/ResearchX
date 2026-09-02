@@ -2,12 +2,13 @@ import os
 import re
 import json
 import sqlite3
-from typing import Optional
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
 from app.search.paper_search_service import search_all_sources
+from app.utils.query_processor import normalize_research_query
 
 
 try:
@@ -145,17 +146,26 @@ async def handle_search_endpoint(
     query: Optional[str] = Query(None),
     q: Optional[str] = Query(None),
 ):
-    search_query = (
+    raw_query = (
         (request.query if request else None)
         or query
         or q
-        or "Vision Transformers"
+        or ""
     )
 
-    print(
-        f"\n[ResearchX] Starting multi-source search: "
-        f"{search_query}"
-    )
+    if not raw_query.strip():
+        return {
+            "status": "error",
+            "message": "Please enter a research topic.",
+            "query": "",
+            "papers": [],
+            "results": [],
+            "count": 0,
+        }
+
+    print(f"\n[ResearchX] User Query: {raw_query}")
+    search_query = normalize_research_query(raw_query)
+    print(f"[ResearchX] Normalized Query: {search_query}")
 
     # Fetch papers from:
     # arXiv + Semantic Scholar + OpenAlex + Crossref
@@ -164,12 +174,54 @@ async def handle_search_endpoint(
         limit_per_source=30,
     )
 
-    print(
-        f"[ResearchX] Returning {len(papers)} total papers"
-    )
+    # ==========================================================
+    # SAVE SEARCH HISTORY
+    # ==========================================================
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS search_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT,
+                query TEXT,
+                answer TEXT,
+                paper_name TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+
+        cursor.execute(
+            """
+            INSERT INTO search_history
+            (session_id, query, answer, paper_name)
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                request.session_id if request else "default_session",
+                search_query,
+                "",
+                None,
+            ),
+        )
+
+        conn.commit()
+        conn.close()
+
+        print(f"[ResearchX] Search history saved: {search_query}")
+    except Exception as e:
+        print(f"[ResearchX] Search history save error: {e}")
+
+    print(f"[ResearchX] Returning {len(papers)} total papers")
 
     return {
         "status": "success",
+        # Original query entered by user
+        "original_query": raw_query,
+        # Corrected / normalized query used for search
         "query": search_query,
         "count": len(papers),
         "results": papers,
@@ -177,6 +229,8 @@ async def handle_search_endpoint(
         "data": {
             "papers": papers,
             "results": papers,
+            "original_query": raw_query,
+            "query": search_query,
         },
     }
 
@@ -273,6 +327,7 @@ async def get_sessions():
 # ==========================================================
 
 @router.get("/history/{session_id}")
+@router.get("/search-history/{session_id}")
 async def get_history(session_id: str):
     conn = None
 
@@ -323,6 +378,37 @@ async def get_history(session_id: str):
             }
         }
 
+    finally:
+        if conn:
+            conn.close()
+
+
+@router.delete("/history/{session_id}")
+@router.delete("/search-history/{session_id}")
+async def delete_search_history(session_id: str):
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM search_history WHERE session_id = ?",
+            (session_id,),
+        )
+        cursor.execute(
+            "DELETE FROM chat_sessions WHERE session_id = ?",
+            (session_id,),
+        )
+        conn.commit()
+        return {
+            "status": "success",
+            "message": "Search history deleted successfully",
+            "session_id": session_id,
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e),
+        }
     finally:
         if conn:
             conn.close()

@@ -3,7 +3,7 @@
 import asyncio
 import os
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cohere
 import httpx
@@ -26,18 +26,74 @@ def normalize_paper(
     source="Unknown",
     citations=0,
     doi=None,
+    venue=None,
+    relevance_score=0.0,
 ):
+    import urllib.parse
+
+    published_str = str(published) if published else "N/A"
+
+    year = None
+    year_match = re.search(r"\b(19|20)\d{2}\b", published_str)
+
+    if year_match:
+        year = int(year_match.group(0))
+
+    # Clean and resolve DOI
+    clean_doi = None
+    if doi:
+        clean_doi = str(doi).replace("https://doi.org/", "").replace("http://doi.org/", "").strip()
+
+    resolved_url = url
+    resolved_pdf = pdf_url
+
+    # Auto-resolve arXiv PDF URLs
+    if resolved_url and "arxiv.org/abs/" in resolved_url:
+        resolved_pdf = resolved_url.replace("/abs/", "/pdf/")
+        if not resolved_pdf.endswith(".pdf"):
+            resolved_pdf += ".pdf"
+    elif resolved_url and "arxiv.org/pdf/" in resolved_url:
+        resolved_pdf = resolved_url
+        resolved_url = resolved_url.replace("/pdf/", "/abs/").replace(".pdf", "")
+
+    # Auto-resolve DOI links
+    if clean_doi:
+        if not resolved_url:
+            resolved_url = f"https://doi.org/{clean_doi}"
+        if not resolved_pdf:
+            if "10.48550/arxiv." in clean_doi.lower():
+                arx_match = re.search(r"arxiv\.(\d+\.\d+)", clean_doi, re.IGNORECASE)
+                if arx_match:
+                    resolved_pdf = f"https://arxiv.org/pdf/{arx_match.group(1)}.pdf"
+            else:
+                resolved_pdf = resolved_url or f"https://doi.org/{clean_doi}"
+
+    # Guaranteed fallbacks so pdf_url is NEVER empty
+    if not resolved_pdf and resolved_url:
+        resolved_pdf = resolved_url
+    elif not resolved_url and resolved_pdf:
+        resolved_url = resolved_pdf
+    elif not resolved_pdf and not resolved_url and title:
+        encoded_title = urllib.parse.quote(title)
+        resolved_url = f"https://scholar.google.com/scholar?q={encoded_title}"
+        resolved_pdf = resolved_url
+
     return {
         "title": title or "",
         "authors": authors or [],
         "summary": summary or "Abstract not available.",
         "abstract": summary or "Abstract not available.",
-        "published": str(published) if published else "N/A",
-        "pdf_url": pdf_url,
-        "url": url,
+        "published": published_str,
+        "published_date": published_str,
+        "year": year,
+        "pdf_url": resolved_pdf,
+        "url": resolved_url,
         "source": source,
+        "venue": venue or "Unknown",
         "citations": citations or 0,
-        "doi": doi,
+        "citation_count": citations or 0,
+        "doi": clean_doi or doi,
+        "relevance_score": float(relevance_score or 0.0),
     }
 
 
@@ -50,8 +106,19 @@ async def fetch_arxiv_papers(query: str, limit: int = 30):
 
     url = "https://export.arxiv.org/api/query"
 
+    # Clean query for arXiv: remove punctuation, extract keywords, avoid rigid full-sentence quotes
+    clean_query = re.sub(r"[^\w\s\-\+]", " ", query).strip()
+    terms = clean_query.split()
+    if len(terms) > 6:
+        # For long sentences, use the core terms with AND
+        arxiv_search_term = " AND ".join(f"all:{t}" for t in terms[:6])
+    elif len(terms) > 1:
+        arxiv_search_term = f'all:({" ".join(terms)})'
+    else:
+        arxiv_search_term = f"all:{clean_query}" if clean_query else "all:research"
+
     params = {
-        "search_query": f'all:"{query}"',
+        "search_query": arxiv_search_term,
         "start": 0,
         "max_results": limit,
         "sortBy": "relevance",
@@ -140,6 +207,7 @@ async def fetch_arxiv_papers(query: str, limit: int = 30):
                     source="arXiv",
                     citations=0,
                     doi=None,
+                    venue="arXiv",
                 )
             )
 
@@ -259,6 +327,7 @@ async def fetch_semantic_scholar_papers(
                     source="Semantic Scholar",
                     citations=paper.get("citationCount", 0),
                     doi=doi,
+                    venue=paper.get("venue"),
                 )
             )
 
@@ -274,82 +343,58 @@ async def fetch_semantic_scholar_papers(
 # 3. OpenAlex
 # ==========================================================
 
+def reconstruct_openalex_abstract(inverted_index: Optional[dict]) -> str:
+    """Reconstruct human-readable abstract from OpenAlex abstract_inverted_index."""
+    if not inverted_index or not isinstance(inverted_index, dict):
+        return ""
+    try:
+        word_positions = []
+        for word, positions in inverted_index.items():
+            if isinstance(positions, list):
+                for pos in positions:
+                    word_positions.append((pos, str(word)))
+        word_positions.sort(key=lambda x: x[0])
+        return " ".join(w for _, w in word_positions).strip()
+    except Exception:
+        return ""
+
+
 async def fetch_openalex_papers(
     query: str,
-    limit: int = 30
+    limit: int = 30,
+    ieee_only: bool = False,
 ):
     papers = []
-
     url = "https://api.openalex.org/works"
 
+    search_query = f"IEEE {query}" if ieee_only else query
     params = {
-        "search": query,
-        "per-page": limit,
+        "search": search_query,
+        "per_page": limit,
     }
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             response = await client.get(url, params=params)
             response.raise_for_status()
-
             data = response.json()
 
         for work in data.get("results", []):
-
-            title = work.get("display_name")
-
+            title = work.get("title")
             if not title:
                 continue
 
-            authors = []
+            authors = [
+                auth.get("author", {}).get("display_name")
+                for auth in work.get("authorships", [])
+                if auth.get("author", {}).get("display_name")
+            ]
 
-            for authorship in work.get(
-                "authorships",
-                []
-            ):
-                author = authorship.get("author", {})
-                name = author.get("display_name")
-
-                if name:
-                    authors.append(name)
-
-            # OpenAlex stores abstract as inverted index
-            abstract_index = work.get(
-                "abstract_inverted_index"
-            )
-
-            abstract = "Abstract not available."
-
-            if abstract_index:
-                positions = []
-
-                for word, indexes in abstract_index.items():
-                    for index in indexes:
-                        positions.append(
-                            (index, word)
-                        )
-
-                positions.sort()
-
-                abstract = " ".join(
-                    word for _, word in positions
-                )
-
+            reconstructed_abstract = reconstruct_openalex_abstract(work.get("abstract_inverted_index"))
+            abstract = reconstructed_abstract or work.get("abstract") or "Abstract not available."
             doi = work.get("doi")
-
-            if doi:
-                doi = doi.replace(
-                    "https://doi.org/",
-                    ""
-                )
-
-            primary_location = (
-                work.get("primary_location") or {}
-            )
-
-            best_oa_location = (
-                work.get("best_oa_location") or {}
-            )
+            primary_location = work.get("primary_location") or {}
+            best_oa_location = work.get("best_oa_location") or {}
 
             landing_page = (
                 primary_location.get("landing_page_url")
@@ -362,24 +407,33 @@ async def fetch_openalex_papers(
                 or best_oa_location.get("pdf_url")
             )
 
+            source_venue = (
+                primary_location.get("source", {}).get("display_name")
+                if primary_location.get("source")
+                else None
+            )
+
+            is_ieee = bool(
+                (source_venue and "ieee" in source_venue.lower())
+                or (doi and "10.1109" in str(doi).lower())
+                or (landing_page and "ieee.org" in str(landing_page).lower())
+            )
+
+            if ieee_only and not is_ieee:
+                continue
+
             papers.append(
                 normalize_paper(
                     title=title,
                     authors=authors[:10],
                     summary=abstract,
-                    published=work.get(
-                        "publication_date"
-                    ) or work.get(
-                        "publication_year"
-                    ) or "N/A",
+                    published=work.get("publication_date") or work.get("publication_year") or "N/A",
                     pdf_url=pdf_url,
                     url=landing_page,
-                    source="OpenAlex",
-                    citations=work.get(
-                        "cited_by_count",
-                        0
-                    ),
+                    source="IEEE (OpenAlex)" if is_ieee else "OpenAlex",
+                    citations=work.get("cited_by_count", 0),
                     doi=doi,
+                    venue=source_venue or ("IEEE Publication" if is_ieee else "Academic Source"),
                 )
             )
 
@@ -395,14 +449,15 @@ async def fetch_openalex_papers(
 
 async def fetch_crossref_papers(
     query: str,
-    limit: int = 30
+    limit: int = 30,
+    ieee_only: bool = False,
 ):
     papers = []
-
     url = "https://api.crossref.org/works"
 
+    search_query = f"IEEE {query}" if ieee_only else query
     params = {
-        "query": query,
+        "query": search_query,
         "rows": limit,
         "select": (
             "DOI,title,author,abstract,published,"
@@ -411,9 +466,10 @@ async def fetch_crossref_papers(
         ),
     }
 
-    headers = {
-        "User-Agent": "ResearchX/1.0"
-    }
+    if ieee_only:
+        params["filter"] = "prefix:10.1109"
+
+    headers = {"User-Agent": "ResearchX/1.0"}
 
     try:
         async with httpx.AsyncClient(
@@ -511,6 +567,11 @@ async def fetch_crossref_papers(
                     published = str(parts[0])
 
             doi = item.get("DOI")
+            container_titles = item.get("container-title", [])
+            venue = container_titles[0] if container_titles else None
+
+            if ieee_only and "ieee" not in str(venue).lower():
+                continue
 
             papers.append(
                 normalize_paper(
@@ -526,6 +587,7 @@ async def fetch_crossref_papers(
                         0
                     ),
                     doi=doi,
+                    venue=venue,
                 )
             )
 
@@ -609,6 +671,8 @@ async def fetch_ieee_papers(
                 or "N/A"
             )
 
+            venue = article.get("publication_title") or article.get("conference_name")
+
             papers.append(
                 normalize_paper(
                     title=title,
@@ -623,6 +687,7 @@ async def fetch_ieee_papers(
                         0
                     ),
                     doi=doi,
+                    venue=venue,
                 )
             )
 
@@ -673,82 +738,15 @@ def remove_duplicate_papers(papers):
 
 
 # ==========================================================
-# Cohere Relevance Reranking & Query-Focus Filtering
+# AI Semantic Relevance Validation (Preserved for Future Use)
 # ==========================================================
-
-def is_query_focused(query: str, paper: dict) -> bool:
-    """
-    Reject papers where the query is only an application context
-    and keep papers directly focused on the user's research topic.
-    """
-
-    query_words = [
-        word.lower()
-        for word in query.split()
-        if len(word) > 2
-    ]
-
-    title = paper.get("title", "").lower()
-    abstract = paper.get("abstract", "").lower()
-
-    # At least 70% of important query words must appear
-    # in title or abstract
-    if not query_words:
-        return True
-
-    matched_words = sum(
-        1 for word in query_words
-        if word in title or word in abstract
-    )
-
-    focus_score = matched_words / len(query_words)
-
-    paper["focus_score"] = round(focus_score * 100, 2)
-
-    return focus_score >= 0.70
-
-
-def is_application_specific(query: str, paper: dict) -> bool:
-    """
-    Detect whether a paper applies the user's topic to a specific domain
-    instead of studying the topic itself.
-    """
-
-    title = paper.get("title", "").lower()
-
-    application_patterns = [
-        "for epidemiological",
-        "for autonomous",
-        "for financial",
-        "for vehicle",
-        "for human-robot",
-        "for robot",
-        "for healthcare",
-        "for medical",
-        "for network security",
-        "for customer",
-        "for manufacturing",
-        "for education",
-        "for agriculture",
-        "for modeling",
-        "for image",
-        "for vision",
-        "for routing",
-        "for specific"
-    ]
-
-    # Only apply this filter for short/general research topics
-    if len(query.split()) <= 4:
-        return any(pattern in title for pattern in application_patterns)
-
-    return False
-
 
 async def ai_relevance_check(query: str, paper: dict) -> bool:
     """
-    Final AI semantic relevance validation.
-    Keeps papers whose main contribution is genuinely related
-    to the user's research query.
+    AI-based semantic relevance validation.
+
+    Checks the actual research intent instead of relying only
+    on keyword overlap.
     """
 
     from groq import AsyncGroq
@@ -757,60 +755,67 @@ async def ai_relevance_check(query: str, paper: dict) -> bool:
         api_key=os.getenv("GROQ_API_KEY")
     )
 
-    title = paper.get("title", "")
-    abstract = paper.get("abstract", "")
+    title = str(paper.get("title") or "")
+    abstract = str(
+        paper.get("abstract")
+        or paper.get("summary")
+        or ""
+    )
 
     prompt = f"""
-You are an expert research paper relevance evaluator.
+You are an expert academic research relevance evaluator.
 
-USER RESEARCH QUERY:
-{query}
+USER RESEARCH QUERY:{query}
 
-PAPER TITLE:
-{title}
+PAPER TITLE:{title}
 
-PAPER ABSTRACT:
-{abstract[:3000]}
+PAPER ABSTRACT:{abstract[:5000]}
 
-TASK:
-Determine whether this paper is genuinely relevant to the user's
-research query based on its main research contribution.
+Determine whether the paper is genuinely relevant to the
+user's research query.
 
-RELEVANT means:
-- The paper directly studies the query topic, OR
-- The paper studies an important architecture, framework, method,
-  design, evaluation, comparison, survey, challenge, or implementation
-  closely related to the query topic.
+The query can belong to ANY academic or scientific domain.
 
-IRRELEVANT means:
-- The query topic is only a minor tool or technique used in an
-  unrelated domain.
-- The paper's main contribution is about a completely different
-  application domain.
-- The connection is based only on keyword overlap.
+Evaluate semantic meaning, not simple keyword overlap.
+
+A paper is RELEVANT when:
+
+- Its main research contribution directly addresses the query, OR
+- It presents a method, architecture, framework, model, algorithm,
+  experiment, dataset, evaluation, survey, review, comparison,
+  theory, or implementation that is substantially related to
+  the research topic.
+
+A paper can still be relevant when:
+- its title uses different terminology,
+- it uses synonyms,
+- it uses an established technical term instead of the wording
+  used by the user,
+- the query is written as a natural-language sentence,
+- the query contains spelling mistakes that were corrected.
+
+A paper is IRRELEVANT when:
+- the connection is only a superficial keyword match,
+- the query concept is only a minor unrelated component,
+- the paper's primary research contribution belongs to a
+  substantially different topic.
 
 IMPORTANT:
-Do NOT require an exact title match.
 
-For example, for the query "Agentic Framework":
-RELEVANT:
-- Agentic AI architectures
-- Agentic system frameworks
-- Agent orchestration frameworks
-- Multi-agent architectures
-- Framework design and evaluation for agentic AI
-- Surveys or comparisons of agentic frameworks
-
-IRRELEVANT:
-- An agentic framework whose main contribution is specifically
-  vehicle routing, epidemiology, industrial inspection, financial
-  services, robotics, or another unrelated application domain.
-
-Consider the TITLE and ABSTRACT together.
+- Do NOT assume any particular research domain.
+- Do NOT require exact title matching.
+- Do NOT reject a paper merely because terminology differs.
+- Judge the relationship between the QUERY and the PAPER'S
+  MAIN RESEARCH CONTRIBUTION.
+- Do not invent relevance that is not supported by the title
+  or abstract.
 
 Return ONLY:
+
 RELEVANT
+
 or
+
 IRRELEVANT
 """
 
@@ -824,44 +829,29 @@ IRRELEVANT
                 }
             ],
             temperature=0,
-            max_tokens=200
+            max_tokens=20,
         )
 
-        raw_content = response.choices[0].message.content
-
-        print(f"[ResearchX] Raw AI response: {raw_content!r}")
-
-        decision = (raw_content or "").strip().upper()
-
-        # Fallback: check reasoning field if content is empty
-        if not decision:
-            reasoning = getattr(
-                response.choices[0].message,
-                "reasoning",
-                None
-            )
-
-            print(f"[ResearchX] AI reasoning: {reasoning!r}")
-
-            decision = (reasoning or "").strip().upper()
-
-        # Extract the final classification safely
-        if "RELEVANT" in decision and "IRRELEVANT" not in decision:
-            decision = "RELEVANT"
-        elif "IRRELEVANT" in decision:
-            decision = "IRRELEVANT"
-        else:
-            decision = "IRRELEVANT"
+        raw_content = (
+            response.choices[0].message.content or ""
+        ).strip().upper()
 
         print(
-            f"[ResearchX] Final AI relevance decision: "
-            f"{decision} | {title}"
+            f"[ResearchX] AI relevance: "
+            f"{title} -> {raw_content!r}"
         )
 
-        return decision == "RELEVANT"
+        if "RELEVANT" in raw_content and "IRRELEVANT" not in raw_content:
+            return True
+
+        return False
 
     except Exception as e:
-        print(f"[ResearchX] AI relevance check failed: {e}")
+        print(
+            f"[AI Relevance Error] {e}"
+        )
+
+        # Do not destroy search results if AI validation fails.
         return True
 
 
@@ -871,18 +861,162 @@ IRRELEVANT
 
 def has_accessible_link(paper: Dict[str, Any]) -> bool:
     """
-    Keep only papers with a directly accessible PDF.
-    Papers without a PDF are rejected.
+    Keep papers that have a usable web link.
+    Prefer PDF links, but allow valid article/source links too.
     """
 
-    pdf_url = paper.get("pdf_url") or ""
+    possible_links = [
+        paper.get("pdf_url"),
+        paper.get("open_access_pdf"),
+        paper.get("url"),
+        paper.get("source_url"),
+        paper.get("provider_url"),
+        paper.get("doi_url"),
+    ]
 
-    if not pdf_url:
-        return False
+    for link in possible_links:
+        if isinstance(link, dict):
+            link = link.get("url")
 
-    pdf_url = str(pdf_url).strip()
+        if link:
+            link = str(link).strip()
 
-    return pdf_url.startswith("http://") or pdf_url.startswith("https://")
+            if link.startswith("http://") or link.startswith("https://"):
+                return True
+
+    return False
+
+
+def normalize_workspace_query(query: str) -> str:
+    """
+    Clean natural-language search instructions while preserving
+    the actual research topic.
+
+    Domain-agnostic: works for any academic field.
+    """
+
+    if not query:
+        return ""
+
+    query = str(query).strip()
+
+    # Remove only conversational search prefixes.
+    query = re.sub(
+        r"^\s*"
+        r"(give\s+me|show\s+me|find\s+me|find|"
+        r"search\s+for|search|get\s+me)"
+        r"\s+",
+        "",
+        query,
+        flags=re.IGNORECASE,
+    )
+
+    # Remove generic paper-request wording.
+    query = re.sub(
+        r"\b(?:some\s+)?(?:research\s+)?papers?\b",
+        "",
+        query,
+        flags=re.IGNORECASE,
+    )
+
+    # Remove generic filler phrases.
+    query = re.sub(
+        r"\b(?:about|regarding|related\s+to)\b",
+        " ",
+        query,
+        flags=re.IGNORECASE,
+    )
+
+    # Keep technical characters such as:
+    # +, #, -, /, ., etc. where possible.
+    query = re.sub(
+        r"[^\w\s\-\+\#\/\.]",
+        " ",
+        query,
+        flags=re.UNICODE,
+    )
+
+    query = re.sub(r"\s+", " ", query).strip()
+
+    return query
+
+
+async def correct_query_spelling(query: str) -> str:
+    """
+    Generic AI-based correction for arbitrary research queries.
+    Domain-agnostic, fixes spelling, typos, and syntax while preserving research intent.
+    """
+    if not query or not query.strip():
+        return ""
+
+    raw_query = query.strip()
+
+    prompt = f"""You are an academic research query correction engine.
+Your task is ONLY to correct spelling errors, typing mistakes, and obvious spacing mistakes in academic queries.
+
+Rules:
+1. Support any academic/scientific domain.
+2. Fix misspelled words and technical terms (e.g., 'deeepfake detction' -> 'deepfake detection', 'transfomer netwrok' -> 'transformer network', 'quantm computng' -> 'quantum computing').
+3. Preserve the exact research intent.
+4. If the query is already correct, return it unchanged.
+5. Return ONLY the corrected search query without explanations, quotation marks, or markdown.
+
+Input query: {raw_query}
+
+Corrected query:"""
+
+    # 1. Primary: Groq (llama-3.3-70b-versatile or llama-3.1-8b-instant)
+    groq_api_key = os.getenv("GROQ_API_KEY")
+    if groq_api_key:
+        try:
+            from groq import AsyncGroq
+            client = AsyncGroq(api_key=groq_api_key)
+            for model_candidate in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192"]:
+                try:
+                    response = await client.chat.completions.create(
+                        model=model_candidate,
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0,
+                        max_tokens=100,
+                    )
+                    corrected = (response.choices[0].message.content or "").strip()
+                    corrected = re.sub(r"^```(?:text)?\s*", "", corrected, flags=re.IGNORECASE)
+                    corrected = re.sub(r"\s*```$", "", corrected)
+                    corrected = corrected.strip().strip('"').strip("'")
+                    if corrected and len(corrected) > 2 and "\n" not in corrected:
+                        print(f"[Query Correction Groq] '{raw_query}' -> '{corrected}'")
+                        return corrected
+                except Exception as model_err:
+                    print(f"[Query Correction Groq Model {model_candidate}]: {model_err}")
+                    continue
+        except Exception as e:
+            print(f"[Query Correction Groq Error] {e}")
+
+    # 2. Secondary: Mistral
+    mistral_api_key = os.getenv("MISTRAL_API_KEY")
+    if mistral_api_key:
+        try:
+            async with httpx.AsyncClient(timeout=10) as http_client:
+                res = await http_client.post(
+                    "https://api.mistral.ai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {mistral_api_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": "mistral-small-latest",
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0,
+                        "max_tokens": 100,
+                    },
+                )
+                if res.status_code == 200:
+                    data = res.json()
+                    corrected = data["choices"][0]["message"]["content"].strip().strip('"').strip("'")
+                    if corrected and "\n" not in corrected:
+                        print(f"[Query Correction Mistral] '{raw_query}' -> '{corrected}'")
+                        return corrected
+        except Exception as e:
+            print(f"[Query Correction Mistral Error] {e}")
+
+    return raw_query
 
 
 def normalize_paper_links(paper: dict) -> dict:
@@ -930,6 +1064,10 @@ def normalize_paper_links(paper: dict) -> dict:
 
 async def rerank_papers(query: str, papers: list, top_n: int = 30):
 
+    if not papers:
+        print("[ResearchX] No accessible papers to rerank")
+        return []
+
     print("[ResearchX] Reranking papers with Cohere...")
 
     cohere_api_key = os.getenv("COHERE_API_KEY")
@@ -966,7 +1104,7 @@ async def rerank_papers(query: str, papers: list, top_n: int = 30):
 
         for result in response.results:
             paper = papers[result.index].copy()
-            paper["relevance_score"] = result.relevance_score
+            paper["relevance_score"] = float(result.relevance_score)
             ranked_papers.append(paper)
 
         return ranked_papers
@@ -980,73 +1118,132 @@ async def rerank_papers(query: str, papers: list, top_n: int = 30):
 # 6. Multi-Source Search
 # ==========================================================
 
+def extract_search_keywords(sentence: str) -> str:
+    """
+    Extract high-signal academic keywords from natural language sentences
+    while preserving technical phrases and terms.
+    """
+    if not sentence:
+        return ""
+    
+    # Remove conversational prefixes
+    cleaned = re.sub(
+        r"^(?:please\s+)?(?:can\s+you\s+)?(?:give\s+me|show\s+me|find\s+me|find|search\s+for|search|get\s+me|i\s+want|i\s+need|i\s+am\s+looking\s+for)\s+",
+        "",
+        sentence.strip(),
+        flags=re.IGNORECASE
+    )
+    # Remove generic academic request phrases
+    cleaned = re.sub(
+        r"\b(?:some\s+)?(?:recent\s+)?(?:research\s+)?(?:papers?|articles?|studies|literature|publications?)\b",
+        " ",
+        cleaned,
+        flags=re.IGNORECASE
+    )
+    # Remove generic filler words
+    cleaned = re.sub(
+        r"\b(?:about|regarding|related\s+to|focusing\s+on|based\s+on|with\s+regard\s+to)\b",
+        " ",
+        cleaned,
+        flags=re.IGNORECASE
+    )
+    # Clean up whitespace
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned if len(cleaned) >= 3 else sentence.strip()
+
+
 async def search_all_sources(
     query: str,
-    limit_per_source: int = 30
+    limit_per_source: int = 30,
+    source: str = "all",
 ) -> List[Dict[str, Any]]:
 
-    print(
-        f"\n[ResearchX] Searching all sources for: {query}"
-    )
+    search_terms = extract_search_keywords(query)
+    print(f"\n[ResearchX] Searching sources for '{query}' (Search terms: '{search_terms}', Filter source: '{source}')")
 
-    results = await asyncio.gather(
-        fetch_ieee_papers(
-            query,
-            limit_per_source
-        ),
-        fetch_arxiv_papers(
-            query,
-            limit_per_source
-        ),
-        fetch_semantic_scholar_papers(
-            query,
-            limit_per_source
-        ),
-        fetch_openalex_papers(
-            query,
-            limit_per_source
-        ),
-        fetch_crossref_papers(
-            query,
-            limit_per_source
-        ),
-        return_exceptions=True,
-    )
+    is_ieee_filter = bool(source and "ieee" in source.lower())
+
+    tasks = [
+        fetch_ieee_papers(search_terms, limit_per_source),
+        fetch_arxiv_papers(search_terms, limit_per_source),
+        fetch_semantic_scholar_papers(search_terms, limit_per_source),
+        fetch_openalex_papers(search_terms, limit_per_source),
+        fetch_openalex_papers(search_terms, 30, ieee_only=True),
+        fetch_crossref_papers(search_terms, limit_per_source),
+        fetch_crossref_papers(search_terms, 30, ieee_only=True),
+    ]
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
 
     all_papers = []
-
     source_names = [
         "IEEE Xplore",
         "arXiv",
         "Semantic Scholar",
         "OpenAlex",
+        "OpenAlex IEEE",
         "Crossref",
+        "Crossref IEEE",
     ]
 
-    for source_name, result in zip(
-        source_names,
-        results
-    ):
+    for source_name, result in zip(source_names, results):
         if isinstance(result, Exception):
-            print(
-                f"[{source_name} Error] {result}"
-            )
+            print(f"[{source_name} Error] {result}")
         else:
-            print(
-                f"[{source_name}] Found {len(result)} papers"
-            )
+            print(f"[{source_name}] Found {len(result)} papers")
             all_papers.extend(result)
 
-    print(
-        f"[ResearchX] Total candidates: {len(all_papers)}"
-    )
+    print(f"[ResearchX] Total candidates: {len(all_papers)}")
 
     unique_papers = remove_duplicate_papers(all_papers)
 
-    print(
-        f"[ResearchX] After duplicate removal: "
-        f"{len(unique_papers)} unique papers"
+    IEEE_VENUE_KEYWORDS = (
+        "ieee",
+        "institute of electrical and electronics engineers",
+        "ieeexplore",
+        "transactions on",
+        "ieee access",
+        "ieee/cvf",
+        "ieee/acm",
+        "ieee transactions",
+        "ieee journal",
+        "ieee symposium",
+        "ieee conference",
+        "ieee international",
+        "ieee letters",
     )
+
+    for paper in unique_papers:
+        venue = str(paper.get("venue") or "").lower()
+        src = str(paper.get("source") or "").lower()
+        url = str(paper.get("url") or "").lower()
+        doi = str(paper.get("doi") or "").lower()
+
+        is_ieee = (
+            "ieee" in src
+            or any(keyword in venue for keyword in IEEE_VENUE_KEYWORDS)
+            or "ieee.org" in url
+            or "10.1109/" in doi
+        )
+        paper["publication_type"] = "IEEE" if is_ieee else "Other"
+        paper["is_ieee"] = is_ieee
+
+    # Apply source filtering if requested
+    if is_ieee_filter:
+        unique_papers = [p for p in unique_papers if p.get("is_ieee") or p.get("publication_type") == "IEEE"]
+        print(f"[ResearchX] Filtered for IEEE: {len(unique_papers)} papers remaining")
+    elif source and source.lower() not in ("all", "any"):
+        src_lower = source.lower()
+        if "arxiv" in src_lower:
+            unique_papers = [p for p in unique_papers if "arxiv" in str(p.get("source", "")).lower()]
+        elif "semantic" in src_lower:
+            unique_papers = [p for p in unique_papers if "semantic" in str(p.get("source", "")).lower()]
+        elif "openalex" in src_lower:
+            unique_papers = [p for p in unique_papers if "openalex" in str(p.get("source", "")).lower()]
+        elif "crossref" in src_lower:
+            unique_papers = [p for p in unique_papers if "crossref" in str(p.get("source", "")).lower()]
+
+    print(f"[ResearchX] After duplicate removal & source filtering: {len(unique_papers)} papers")
 
     # Normalize all source-specific links
     normalized_papers = [
@@ -1054,123 +1251,196 @@ async def search_all_sources(
         for paper in unique_papers
     ]
 
-    # Keep only papers researchers can actually open
+    # Keep papers that have accessible links
     accessible_papers = [
         paper for paper in normalized_papers
         if has_accessible_link(paper)
     ]
 
-    print(
-        f"[ResearchX] Accessible papers: "
-        f"{len(accessible_papers)}"
-    )
+    if not accessible_papers and normalized_papers:
+        accessible_papers = normalized_papers
 
-    # Rerank accessible candidate papers with Cohere
+    print(f"[ResearchX] Accessible candidate papers: {len(accessible_papers)}")
+
+    # Rerank candidate papers with Cohere
     reranked_papers = await rerank_papers(
         query,
         accessible_papers,
-        top_n=30
+        top_n=len(accessible_papers)
     )
 
-    # Strict Relevance Filtering
-    strictly_relevant_papers = []
+    RELEVANCE_THRESHOLD = 0.02
+    strictly_relevant_papers = [
+        paper
+        for paper in reranked_papers
+        if float(paper.get("relevance_score", 0.0)) >= RELEVANCE_THRESHOLD
+    ]
 
-    for paper in reranked_papers:
-        if len(strictly_relevant_papers) >= 10:
-            break
-
-        # Cohere relevance threshold
-        if paper.get("relevance_score", 0.0) < 0.60:
-            continue
-
-        # Query-focus validation
-        if not is_query_focused(query, paper):
-            print(
-                f"[ResearchX] Rejected - low query focus: "
-                f"{paper.get('title')}"
-            )
-            continue
-
-        # Reject application-specific papers for a general research query
-        if is_application_specific(query, paper):
-            print(
-                f"[ResearchX] Rejected - application-specific: "
-                f"{paper.get('title')}"
-            )
-            continue
-
-        # Final AI semantic relevance validation
-        is_relevant = await ai_relevance_check(query, paper)
-
-        if not is_relevant:
-            print(
-                f"[ResearchX] Rejected by AI relevance judge: "
-                f"{paper.get('title')}"
-            )
-            continue
-
-        strictly_relevant_papers.append(paper)
+    if not strictly_relevant_papers and reranked_papers:
+        strictly_relevant_papers = reranked_papers
 
     print(f"[ResearchX] Strictly relevant papers: {len(strictly_relevant_papers)}")
 
-    # ==========================================================
-    # FINAL PAPER SELECTION
-    # Always try to return up to 10 accessible papers
-    # ==========================================================
+    def get_year(paper):
+        value = str(paper.get("published", "0"))
+        match = re.search(r"\b(19|20)\d{2}\b", value)
+        return int(match.group()) if match else 0
 
-    final_papers = []
+    def source_priority(paper):
+        source_str = str(paper.get("source", "")).lower()
+        if "ieee" in source_str or paper.get("is_ieee"):
+            return 3
+        if any(x in source_str for x in ["semantic scholar", "openalex", "crossref"]):
+            return 2
+        if "arxiv" in source_str:
+            return 1
+        return 0
 
-    # Priority 1: Strictly AI-relevant papers
-    final_papers.extend(strictly_relevant_papers[:10])
+    strictly_relevant_papers.sort(
+        key=lambda paper: (
+            paper.get("relevance_score", 0.0),
+            get_year(paper),
+            source_priority(paper),
+            paper.get("citations", 0),
+        ),
+        reverse=True
+    )
 
-    # Priority 2: If fewer than 10 strict matches exist,
-    # fill remaining slots using the highest-ranked accessible papers
-    if len(final_papers) < 10:
+    final_papers = strictly_relevant_papers[:30]
+    return final_papers
 
-        print(
-            f"[ResearchX] Only {len(final_papers)} strictly relevant papers found. "
-            "Filling remaining slots from top accessible reranked papers..."
+
+async def search_workspace_papers(
+    query: str,
+    limit: int = 10,
+    sort_by: str = "relevance",
+    year: str = "all",
+    source: str = "all",
+) -> List[Dict[str, Any]]:
+
+    original_query = (query or "").strip()
+    corrected_query = await correct_query_spelling(original_query)
+
+    if not corrected_query:
+        corrected_query = original_query
+
+    print(f"[Workspace Search] Original query: '{original_query}'")
+    print(f"[Workspace Search] Corrected query: '{corrected_query}'")
+
+    papers = await search_all_sources(
+        query=corrected_query,
+        limit_per_source=30,
+        source=source or "all",
+    )
+
+    # Comprehensive Year Filtering
+    if year and year.lower() != "all":
+        y_lower = year.lower().strip()
+        if y_lower in ("foundational", "old", "<=2020"):
+            papers = [p for p in papers if (p.get("year") or 0) <= 2020 and (p.get("year") or 0) > 0]
+        elif y_lower in ("last_3_years", "recent_3", "2023-2026"):
+            papers = [p for p in papers if (p.get("year") or 0) >= 2023]
+        elif y_lower in ("last_5_years", "recent_5", "2021-2026"):
+            papers = [p for p in papers if (p.get("year") or 0) >= 2021]
+        elif y_lower in ("2025", "2026", "2025-2026"):
+            papers = [p for p in papers if (p.get("year") or 0) >= 2025]
+        elif "-" in y_lower:
+            parts = y_lower.split("-")
+            if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+                start_y, end_y = int(parts[0]), int(parts[1])
+                papers = [p for p in papers if start_y <= (p.get("year") or 0) <= end_y]
+        elif y_lower.isdigit():
+            target_year = int(y_lower)
+            papers = [p for p in papers if p.get("year") == target_year]
+
+    # Sorting
+    if sort_by == "relevance":
+        papers.sort(
+            key=lambda p: (
+                -(p.get("relevance_score") or 0.0),
+                -(p.get("year") or 0),
+                -(p.get("citations") or 0),
+            )
+        )
+    elif sort_by == "year_desc":
+        papers.sort(
+            key=lambda p: (
+                -(p.get("year") or 0),
+                -(p.get("relevance_score") or 0.0),
+                -(p.get("citations") or 0),
+            )
+        )
+    elif sort_by == "year_asc":
+        papers.sort(
+            key=lambda p: (
+                p.get("year") or 9999,
+                -(p.get("relevance_score") or 0.0),
+                -(p.get("citations") or 0),
+            )
+        )
+    elif sort_by == "citations_desc":
+        papers.sort(
+            key=lambda p: (
+                -(p.get("citations") or 0),
+                -(p.get("relevance_score") or 0.0),
+                -(p.get("year") or 0),
+            )
         )
 
-        existing_titles = {
-            paper.get("title", "").strip().lower()
-            if isinstance(paper, dict)
-            else getattr(paper, "title", "").strip().lower()
-            for paper in final_papers
-        }
+    # ----------------------------------------------------
+    # Ensure Balanced Multi-Source & Guaranteed IEEE Papers
+    # ----------------------------------------------------
+    if (not source or source.lower() in ("all", "any", "global")) and papers:
+        ieee_papers = [p for p in papers if p.get("is_ieee") or p.get("publication_type") == "IEEE"]
+        other_papers = [p for p in papers if not (p.get("is_ieee") or p.get("publication_type") == "IEEE")]
 
-        for paper in reranked_papers:
+        if ieee_papers:
+            # Guarantee at least 1-2 IEEE papers in the top results
+            num_ieee_to_include = min(2, len(ieee_papers))
+            guaranteed_ieee = ieee_papers[:num_ieee_to_include]
+            remaining_ieee = ieee_papers[num_ieee_to_include:]
 
-            title = (
-                paper.get("title", "").strip().lower()
-                if isinstance(paper, dict)
-                else getattr(paper, "title", "").strip().lower()
-            )
+            # Interleave guaranteed IEEE papers with top non-IEEE papers
+            balanced_papers = []
+            other_idx = 0
+            ieee_idx = 0
 
-            # Skip duplicates
-            if title in existing_titles:
-                continue
+            # Slot 1: Top paper (either top other or top IEEE)
+            if other_papers:
+                balanced_papers.append(other_papers[0])
+                other_idx += 1
 
-            final_papers.append(paper)
-            existing_titles.add(title)
+            # Slot 2: Guaranteed IEEE paper #1
+            if ieee_idx < len(guaranteed_ieee):
+                balanced_papers.append(guaranteed_ieee[ieee_idx])
+                ieee_idx += 1
 
-            if len(final_papers) >= 10:
-                break
+            # Slot 3: Next top other paper
+            if other_idx < len(other_papers):
+                balanced_papers.append(other_papers[other_idx])
+                other_idx += 1
 
-    print(f"[ResearchX] Final papers selected: {len(final_papers)}")
+            # Slot 4: Guaranteed IEEE paper #2 (if available)
+            if ieee_idx < len(guaranteed_ieee):
+                balanced_papers.append(guaranteed_ieee[ieee_idx])
+                ieee_idx += 1
 
-    print("\n========== FINAL PAPER LINKS ==========")
+            # Fill remaining slots from remaining other and IEEE papers
+            remaining_pool = other_papers[other_idx:] + remaining_ieee
+            # Re-sort remaining pool by chosen sort criteria
+            if sort_by == "relevance":
+                remaining_pool.sort(key=lambda p: -(p.get("relevance_score") or 0.0))
+            elif sort_by == "year_desc":
+                remaining_pool.sort(key=lambda p: -(p.get("year") or 0))
+            elif sort_by == "citations_desc":
+                remaining_pool.sort(key=lambda p: -(p.get("citations") or 0))
 
-    for i, paper in enumerate(final_papers, 1):
-        print(f"\nPaper {i}: {paper.get('title')}")
-        print("pdf_url:", paper.get("pdf_url"))
-        print("url:", paper.get("url"))
-        print("provider_url:", paper.get("provider_url"))
-        print("source_url:", paper.get("source_url"))
-        print("doi_url:", paper.get("doi_url"))
+            balanced_papers.extend(remaining_pool)
+            papers = balanced_papers
 
-    print("\n=======================================\n")
+    # Attach query metadata to the papers for consumer introspection
+    for p in papers:
+        p["search_corrected_query"] = corrected_query
+        p["search_original_query"] = original_query
 
-    print(f"[ResearchX] Returning {len(final_papers)} papers")
-
-    return final_papers[:10]
+    return papers[:limit]

@@ -1,3 +1,6 @@
+import os
+import sqlite3
+
 from fastapi import APIRouter, Query
 from app.database.mongodb import papers_collection, agent_runs_collection
 
@@ -22,28 +25,43 @@ def get_dashboard():
 
     recent = []
 
-    cursor = (
-        papers_collection.find(
-            {},
-            {
-                "_id": 0,
-                "title": 1,
-                "uploaded_at": 1,
-            },
-        )
-        .sort("uploaded_at", -1)
-        .limit(5)
+    DB_PATH = os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "database",
+        "research.db"
     )
-
-    for paper in cursor:
-        recent.append(
-            {
-                "title": paper["title"],
-                "agent": "Paper Upload",
-                "time": paper.get("uploaded_at", paper.get("published", "")),
-                "status": "Completed",
-            }
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS search_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT,
+            query TEXT,
+            answer TEXT,
+            paper_name TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
+        """
+    )
+    cursor.execute(
+        """
+        SELECT query, created_at
+        FROM search_history
+        ORDER BY id DESC
+        LIMIT 5
+        """
+    )
+    for row in cursor.fetchall():
+        recent.append({
+            "title": row["query"],
+            "agent": "Research Search",
+            "time": row["created_at"],
+            "status": "Completed",
+        })
+    conn.close()
 
     return {
         "success": True,
@@ -133,7 +151,7 @@ def search_dashboard(query: str = Query(...)):
         results.append(
             {
                 "title": paper["title"],
-                "uploaded_at": paper["uploaded_at"],
+                "uploaded_at": paper.get("uploaded_at"),
             }
         )
 

@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import Any, List, Optional
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -55,7 +55,6 @@ app.add_middleware(
         "http://127.0.0.1:8080",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
-        "*",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -101,10 +100,16 @@ class AgentRequest(BaseModel):
     query: str
     paper_name: Optional[str] = None
     context: Optional[str] = None
+    papers: Optional[List[Any]] = None
 
 @app.post("/api/run-agent")
 def execute_agent(req: AgentRequest):
-    return run_agent(query=req.query, paper_name=req.paper_name, context=req.context)
+    return run_agent(
+        query=req.query,
+        paper_name=req.paper_name,
+        context=req.context,
+        papers=req.papers,
+    )
 
 # ==========================================================
 # IEEE PPT & PDF Download Endpoints

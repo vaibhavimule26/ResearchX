@@ -5,6 +5,12 @@ const API_BASE_URL =
 async function handleResponse(response: Response) {
   const data = await response.json();
 
+  if (response.status === 401) {
+    localStorage.removeItem("token");
+    window.location.href = "/login";
+    throw new Error("Session expired. Please login again.");
+  }
+
   if (!response.ok) {
     throw new Error(
       data?.message ||
@@ -322,7 +328,6 @@ export type PresentationResponse = {
 export async function generatePresentation(
   paperName: string
 ): Promise<PresentationResponse> {
-
   const response = await fetch(
     `${API_BASE_URL}/presentation/generate`,
     {
@@ -379,7 +384,6 @@ export async function getDashboard(): Promise<DashboardResponse> {
 export async function searchDashboard(
   query: string
 ): Promise<DashboardSearchResponse> {
-
   console.log("Calling API:", query);
 
   const response = await fetch(
@@ -413,23 +417,34 @@ export interface ResearchPaper {
   citations?: number;
   venue: string;
   source: string;
+  publication_type?: string;
+  is_ieee?: boolean;
   why_chosen?: string;
   relevance_reason?: string;
-  key_contribution?: string;
+  relevance_score?: number;
   relevance_badge?: string;
+  key_contribution?: string;
   pdf_url?: string;
   url?: string;
   tags?: string[];
+  search_corrected_query?: string;
+  search_original_query?: string;
 }
 
 export async function searchResearchPapers(
   query: string,
-  sortBy: string = "year_desc",
-  year?: string
+  sortBy: string = "relevance",
+  year?: string,
+  source?: string
 ): Promise<{
   success: boolean;
   results: ResearchPaper[];
   total?: number;
+  query?: string;
+  original_query?: string;
+  corrected_query?: string;
+  filter_source?: string;
+  filter_year?: string;
 }> {
   const params = new URLSearchParams({
     query: query,
@@ -440,8 +455,46 @@ export async function searchResearchPapers(
     params.append("year", year);
   }
 
+  if (source && source !== "all") {
+    params.append("source", source);
+  }
+
   const response = await fetch(
     `${API_BASE_URL}/api/search?${params.toString()}`
+  );
+
+  return handleResponse(response);
+}
+
+export async function runAllWorkspaceAgents(
+  topic: string,
+  sessionId: string,
+  papers: any[]
+) {
+  const response = await fetch(
+    `${API_BASE_URL}/analysis/workspace/run-all`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        topic,
+        session_id: sessionId,
+        papers,
+      }),
+    }
+  );
+
+  return handleResponse(response);
+}
+
+export async function deleteWorkspaceSession(sessionId: string) {
+  const response = await fetch(
+    `${API_BASE_URL}/analysis/workspace/${encodeURIComponent(sessionId)}`,
+    {
+      method: "DELETE",
+    }
   );
 
   return handleResponse(response);
