@@ -208,15 +208,23 @@ async def get_papers():
 
     papers = []
 
-    for paper in papers_collection.find(
-        {},
-        {
-            "_id": 0,
-            "embeddings": 0,
-            "text": 0,
-            "chunks": 0
-        }
-    ):
+    # Query all papers and ensure uploaded ones come first
+    raw_papers = list(
+        papers_collection.find(
+            {},
+            {
+                "_id": 0,
+                "embeddings": 0,
+                "text": 0,
+                "chunks": 0
+            }
+        ).sort("uploaded_at", -1)
+    )
+
+    for paper in raw_papers:
+        # Guarantee filename is present
+        if not paper.get("filename"):
+            paper["filename"] = paper.get("title") or "Untitled Paper"
         papers.append(paper)
 
     return success_response(

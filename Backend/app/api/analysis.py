@@ -283,6 +283,7 @@ async def run_paper_analysis(request: AnalysisRequest):
         raw_result = run_agent(
             query=request.query or request.analysis_type or "summary",
             paper_name=request.paper_name,
+            analysis_type=request.analysis_type,
         )
 
         clean_result = format_clean_analysis_output(raw_result)

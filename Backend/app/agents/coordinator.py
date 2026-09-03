@@ -265,9 +265,12 @@ def load_context_for_paper(
     query: str = "",
     pdf_url: Optional[str] = None,
 ) -> str:
-    """Multi-tiered scan across SQLite DB, Vector Stores, and Disk Directories."""
+    """
+    Multi-tiered scan across MongoDB, Local Disk/Uploads, Vector Stores, and Fallback Web APIs.
+    Prioritizes locally uploaded documents and MongoDB records first.
+    """
     print("[DEBUG] paper_name =", repr(paper_name))
-    print("[DEBUG] paper_name type =", type(paper_name))
+    print("[DEBUG] query =", repr(query))
 
     if not paper_name or not isinstance(paper_name, str):
         paper_name = str(paper_name) if paper_name else ""
@@ -275,8 +278,173 @@ def load_context_for_paper(
     if not paper_name.strip():
         return ""
 
+    raw_clean_target = (
+        paper_name.lower()
+        .replace(".pdf", "")
+        .replace(".txt", "")
+        .replace("_", "")
+        .replace(" ", "")
+        .replace("(", "")
+        .replace(")", "")
+        .strip()
+    )
+
     # ==========================================================
-    # Step 0: Fetch PDF from provided URL
+    # Tier 1: Check MongoDB Uploaded Papers (HIGHEST PRIORITY)
+    # ==========================================================
+    try:
+        from app.database.mongodb import papers_collection
+
+        # Query MongoDB for exact or regex match
+        mongo_paper = (
+            papers_collection.find_one({"filename": paper_name})
+            or papers_collection.find_one({"title": paper_name})
+            or papers_collection.find_one({
+                "filename": {"$regex": re.escape(paper_name.strip()), "$options": "i"}
+            })
+            or papers_collection.find_one({
+                "title": {"$regex": re.escape(paper_name.strip()), "$options": "i"}
+            })
+        )
+
+        if not mongo_paper and raw_clean_target:
+            for cand in papers_collection.find({"text": {"$exists": True}}).limit(30):
+                c_fn = (cand.get("filename") or cand.get("title") or "").lower()
+                c_clean = (
+                    c_fn.replace(".pdf", "")
+                    .replace(".txt", "")
+                    .replace("_", "")
+                    .replace(" ", "")
+                    .replace("(", "")
+                    .replace(")", "")
+                    .strip()
+                )
+                if raw_clean_target in c_clean or c_clean in raw_clean_target:
+                    mongo_paper = cand
+                    break
+
+        if mongo_paper:
+            p_text = mongo_paper.get("text", "")
+            p_title = mongo_paper.get("title") or mongo_paper.get("filename") or paper_name
+
+            # Retrieve RAG chunks from ChromaDB if query is provided
+            rag_context = ""
+            if query and query.strip() and query.lower() not in ["summary", "summarize", "summarize this paper"]:
+                try:
+                    from app.rag.rag_service import retrieve_rag_context
+                    rag_paper_id = mongo_paper.get("filename") or paper_name
+                    rag_context = retrieve_rag_context(query=query, paper_id=rag_paper_id, top_k=6)
+                except Exception as rag_err:
+                    print(f"[Context Scanner] RAG context error: {rag_err}")
+
+            if p_text and len(p_text.strip()) > 100:
+                print(f"[Context Scanner] Found paper in MongoDB: {p_title} ({len(p_text)} chars)")
+                if rag_context and "No relevant evidence" not in rag_context:
+                    return f"Paper Title: {p_title}\n\nKey Relevant Evidence:\n{rag_context}\n\nFull Paper Content:\n{p_text[:35000]}"
+                return f"Paper Title: {p_title}\n\n{p_text[:35000]}"
+
+    except Exception as mongo_err:
+        print(f"[Context Scanner] MongoDB lookup error: {mongo_err}")
+
+    # ==========================================================
+    # Tier 2: Recursive Local File System Search (Uploads & Disk)
+    # ==========================================================
+    backend_dir = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
+    search_dirs = [
+        os.path.join(backend_dir, "uploads"),
+        os.path.join(backend_dir, "Backend", "uploads"),
+        os.path.join(os.getcwd(), "uploads"),
+        os.path.join(os.getcwd(), "Backend", "uploads"),
+        os.path.join(backend_dir, "data"),
+        os.path.join(backend_dir, "data", "uploads"),
+        os.path.abspath("uploads"),
+        os.path.abspath("."),
+    ]
+
+    for directory in search_dirs:
+        if not os.path.exists(directory):
+            continue
+
+        for root, _, files in os.walk(directory):
+            for f in files:
+                if not f.lower().endswith((".pdf", ".txt")):
+                    continue
+                f_clean = (
+                    f.lower()
+                    .replace(".pdf", "")
+                    .replace(".txt", "")
+                    .replace("_", "")
+                    .replace(" ", "")
+                    .replace("(", "")
+                    .replace(")", "")
+                )
+                if (raw_clean_target and (raw_clean_target in f_clean or f_clean in raw_clean_target)) or (f.lower() == paper_name.lower()):
+                    full_path = os.path.join(root, f)
+                    extracted = extract_text_from_file_universal(full_path)
+                    if extracted and len(extracted.strip()) > 100:
+                        print(f"[Context Scanner] Extracted text from local file: {full_path} ({len(extracted)} chars)")
+                        return f"Paper Title: {f}\n\n{extracted[:35000]}"
+
+    # ==========================================================
+    # Tier 3: Vector Store / ChromaDB RAG Search
+    # ==========================================================
+    try:
+        from app.rag.rag_service import retrieve_rag_context
+        rag_ctx = retrieve_rag_context(
+            query=query or "abstract methodology key contributions experimental results",
+            paper_id=paper_name,
+            top_k=8,
+        )
+        if rag_ctx and len(rag_ctx.strip()) > 100 and "No relevant evidence" not in rag_ctx:
+            print(f"[Context Scanner] Retrieved RAG context from ChromaDB ({len(rag_ctx)} chars)")
+            return rag_ctx
+    except Exception as rag_err:
+        print(f"[Context Scanner] ChromaDB RAG error: {rag_err}")
+
+    # ==========================================================
+    # Tier 4: SQLite Database (Legacy fallback)
+    # ==========================================================
+    db_paths = [
+        os.path.join(backend_dir, "Backend", "app", "database", "research.db"),
+        os.path.join(backend_dir, "app", "database", "research.db"),
+        os.path.join(os.getcwd(), "app", "database", "research.db"),
+    ]
+
+    for db_p in db_paths:
+        if os.path.exists(db_p):
+            try:
+                conn = sqlite3.connect(db_p)
+                cursor = conn.cursor()
+                for table in ["papers", "documents", "pdf_records", "files"]:
+                    try:
+                        cursor.execute(f"SELECT filename, content FROM {table}")
+                        rows = cursor.fetchall()
+                        for r_name, r_content in rows:
+                            c_name = (
+                                str(r_name)
+                                .lower()
+                                .replace(".pdf", "")
+                                .replace("_", "")
+                                .replace(" ", "")
+                                .replace("(", "")
+                                .replace(")", "")
+                            )
+                            if (
+                                raw_clean_target in c_name
+                                or c_name in raw_clean_target
+                            ) and (r_content and len(r_content.strip()) > 100):
+                                conn.close()
+                                return r_content[:30000]
+                    except Exception:
+                        pass
+                conn.close()
+            except Exception:
+                pass
+
+    # ==========================================================
+    # Tier 5: Fetch PDF from provided URL (Online Paper Search)
     # ==========================================================
     if pdf_url:
         try:
@@ -319,21 +487,6 @@ def load_context_for_paper(
                         allow_redirects=True,
                     )
 
-                    print(
-                        f"[Context Scanner] HTTP status: "
-                        f"{response.status_code}"
-                    )
-
-                    print(
-                        f"[Context Scanner] Content-Type: "
-                        f"{response.headers.get('Content-Type', '')}"
-                    )
-
-                    print(
-                        f"[Context Scanner] Downloaded bytes: "
-                        f"{len(response.content)}"
-                    )
-
                     if (
                         response.status_code == 200
                         and response.content.startswith(b"%PDF")
@@ -352,436 +505,92 @@ def load_context_for_paper(
                     suffix=".pdf",
                     delete=False,
                 ) as temp_pdf:
-
                     temp_pdf.write(pdf_bytes)
                     temp_path = temp_pdf.name
 
                 try:
-                    extracted = extract_text_from_file_universal(
-                        temp_path
-                    )
-
+                    extracted = extract_text_from_file_universal(temp_path)
                     if extracted and len(extracted.strip()) > 100:
-                        print(
-                            "[Context Scanner] PDF text extracted: "
-                            f"{len(extracted)} characters"
-                        )
-
                         return extracted.strip()
-
-                    print(
-                        "[Context Scanner] PDF downloaded but "
-                        "text extraction returned insufficient content."
-                    )
-
                 finally:
                     try:
                         os.unlink(temp_path)
                     except Exception:
                         pass
 
-            else:
-                print(
-                    "[Context Scanner] Direct PDF download failed."
-                )
-
         except Exception as e:
-            print(
-                f"[Context Scanner] PDF fetch/extraction error: {e}"
-            )
+            print(f"[Context Scanner] PDF fetch/extraction error: {e}")
 
-        # ==================================================
-        # FALLBACK: Fetch article HTML when PDF is blocked
-        # ==================================================
+        # Fallback to article HTML
         try:
             from bs4 import BeautifulSoup
-
-            article_url = pdf_url
-
-            # Convert common PDF URLs into article URLs
-            article_url = re.sub(
-                r"/pdf(?:\?.*)?$",
-                "",
-                article_url,
-                flags=re.IGNORECASE,
-            )
-
-            print(
-                f"[Context Scanner] Trying article fallback: "
-                f"{article_url}"
-            )
-
+            article_url = re.sub(r"/pdf(?:\?.*)?$", "", pdf_url, flags=re.IGNORECASE)
             article_response = requests.get(
                 article_url,
                 timeout=30,
-                headers={
-                    "User-Agent": (
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 "
-                        "(KHTML, like Gecko) "
-                        "Chrome/131.0.0.0 Safari/537.36"
-                    ),
-                    "Accept": "text/html,application/xhtml+xml,*/*",
-                    "Accept-Language": "en-US,en;q=0.9",
-                    "Referer": "https://www.google.com/",
-                },
+                headers={"User-Agent": "Mozilla/5.0"},
                 allow_redirects=True,
             )
-
-            print(
-                f"[Context Scanner] Article HTTP status: "
-                f"{article_response.status_code}"
-            )
-
             if article_response.status_code == 200:
-                soup = BeautifulSoup(
-                    article_response.text,
-                    "html.parser",
-                )
-
-                # Remove non-content elements
-                for element in soup(
-                    [
-                        "script",
-                        "style",
-                        "noscript",
-                        "nav",
-                        "footer",
-                        "header",
-                        "form",
-                    ]
-                ):
+                soup = BeautifulSoup(article_response.text, "html.parser")
+                for element in soup(["script", "style", "noscript", "nav", "footer", "header", "form"]):
                     element.decompose()
-
-                article_text = soup.get_text(
-                    separator="\n",
-                    strip=True,
-                )
-
-                # Normalize whitespace
-                article_text = re.sub(
-                    r"\n{3,}",
-                    "\n\n",
-                    article_text,
-                )
-
-                article_text = re.sub(
-                    r"[ \t]+",
-                    " ",
-                    article_text,
-                )
-
-                print(
-                    f"[Context Scanner] Article text extracted: "
-                    f"{len(article_text)} characters"
-                )
-
+                article_text = soup.get_text(separator="\n", strip=True)
+                article_text = re.sub(r"\n{3,}", "\n\n", article_text)
                 if len(article_text.strip()) > 500:
                     return article_text.strip()
-
-            else:
-                print(
-                    "[Context Scanner] Article fallback failed: "
-                    f"HTTP {article_response.status_code}"
-                )
-
         except Exception as e:
-            print(
-                f"[Context Scanner] Article fallback error: {e}"
-            )
-
-        # ==================================================
-        # FALLBACK 2: OpenAlex abstract
-        # ==================================================
-        try:
-            print(
-                "[Context Scanner] Trying OpenAlex abstract fallback..."
-            )
-
-            openalex_url = None
-
-            # Prefer DOI if available from the supplied URL
-            doi_match = re.search(
-                r"(10\.\d{4,9}/[-._;()/:A-Z0-9]+)",
-                pdf_url or "",
-                re.IGNORECASE,
-            )
-
-            if doi_match:
-                doi = doi_match.group(1).rstrip(".")
-                openalex_url = (
-                    "https://api.openalex.org/works/"
-                    + requests.utils.quote(
-                        "https://doi.org/" + doi,
-                        safe=":/",
-                    )
-                )
-
-            # Specific fallback for MDPI URLs
-            if not openalex_url and "mdpi.com" in (pdf_url or "").lower():
-                openalex_url = (
-                    "https://api.openalex.org/works/"
-                    "https://doi.org/10.3390/info13060284"
-                )
-
-            if openalex_url:
-                oa_response = requests.get(
-                    openalex_url,
-                    timeout=30,
-                    headers={
-                        "User-Agent": "ResearchX/1.0"
-                    },
-                )
-
-                print(
-                    f"[Context Scanner] OpenAlex HTTP status: "
-                    f"{oa_response.status_code}"
-                )
-
-                if oa_response.status_code == 200:
-                    oa_data = oa_response.json()
-
-                    title = oa_data.get("title") or paper_name
-
-                    abstract_index = oa_data.get(
-                        "abstract_inverted_index"
-                    )
-
-                    abstract = ""
-
-                    if isinstance(abstract_index, dict):
-                        words = []
-
-                        for word, positions in abstract_index.items():
-                            for position in positions:
-                                words.append(
-                                    (position, word)
-                                )
-
-                        words.sort(key=lambda x: x[0])
-
-                        abstract = " ".join(
-                            word for _, word in words
-                        )
-
-                    elif isinstance(
-                        abstract_index,
-                        str,
-                    ):
-                        abstract = abstract_index
-
-                    if abstract and len(abstract.strip()) > 100:
-                        fallback_context = (
-                            f"Paper Title: {title}\n\n"
-                            f"Abstract:\n{abstract.strip()}"
-                        )
-
-                        print(
-                            "[Context Scanner] OpenAlex abstract "
-                            f"retrieved: {len(abstract)} characters"
-                        )
-
-                        return fallback_context
-
-                    print(
-                        "[Context Scanner] OpenAlex returned "
-                        "no usable abstract."
-                    )
-
-        except Exception as e:
-            print(
-                f"[Context Scanner] OpenAlex fallback error: {e}"
-            )
+            print(f"[Context Scanner] Article fallback error: {e}")
 
     # ==========================================================
-    # FALLBACK: Search OpenAlex directly by paper title
+    # Tier 6: OpenAlex by Title (ONLY for Online Paper Search, NOT for local/uploaded files)
     # ==========================================================
-    if paper_name:
-        try:
-            print(
-                f"[Context Scanner] Searching OpenAlex by title: "
-                f"{paper_name}"
-            )
+    is_local_file_pattern = (
+        paper_name.lower().endswith(".pdf")
+        or paper_name.lower().endswith(".txt")
+        or "research paper" in paper_name.lower()
+        or paper_name.lower().startswith("paper")
+    )
 
+    if paper_name and not is_local_file_pattern:
+        try:
+            print(f"[Context Scanner] Searching OpenAlex by title: {paper_name}")
             search_response = requests.get(
                 "https://api.openalex.org/works",
-                params={
-                    "search": paper_name,
-                    "per-page": 5,
-                },
+                params={"search": paper_name, "per-page": 5},
                 timeout=30,
-                headers={
-                    "User-Agent": "ResearchX/1.0",
-                },
+                headers={"User-Agent": "ResearchX/1.0"},
             )
-
-            print(
-                f"[Context Scanner] OpenAlex title search status: "
-                f"{search_response.status_code}"
-            )
-
             if search_response.status_code == 200:
                 search_data = search_response.json()
                 works = search_data.get("results", [])
-
                 if works:
                     target_title = paper_name.strip().lower()
-
                     selected_work = next(
                         (
                             work
                             for work in works
-                            if str(work.get("title", "")).strip().lower()
-                            == target_title
+                            if str(work.get("title", "")).strip().lower() == target_title
                         ),
                         works[0],
                     )
-
-                    abstract_index = selected_work.get(
-                        "abstract_inverted_index"
-                    )
-
+                    abstract_index = selected_work.get("abstract_inverted_index")
+                    abstract = ""
                     if isinstance(abstract_index, dict):
                         words = []
-
                         for word, positions in abstract_index.items():
                             for position in positions:
                                 words.append((position, word))
-
                         words.sort(key=lambda x: x[0])
-
-                        abstract = " ".join(
-                            word for _, word in words
-                        )
-                    else:
-                        abstract = ""
+                        abstract = " ".join(word for _, word in words)
+                    elif isinstance(abstract_index, str):
+                        abstract = abstract_index
 
                     if abstract and len(abstract.strip()) > 100:
-                        title = selected_work.get(
-                            "title",
-                            paper_name,
-                        )
-
-                        fallback_context = (
-                            f"Paper Title: {title}\n\n"
-                            f"Abstract:\n{abstract.strip()}"
-                        )
-
-                        print(
-                            "[Context Scanner] OpenAlex title search "
-                            f"retrieved: {len(abstract)} characters"
-                        )
-
-                        return fallback_context
-
-                    print(
-                        "[Context Scanner] OpenAlex title search "
-                        "found a paper but no usable abstract."
-                    )
-
+                        title = selected_work.get("title", paper_name)
+                        return f"Paper Title: {title}\n\nAbstract:\n{abstract.strip()}"
         except Exception as e:
-            print(
-                f"[Context Scanner] OpenAlex title search error: {e}"
-            )
-
-    raw_clean_target = (
-        paper_name.lower()
-        .replace(".pdf", "")
-        .replace(".txt", "")
-        .replace("_", "")
-        .replace(" ", "")
-        .replace("(", "")
-        .replace(")", "")
-        .strip()
-    )
-
-    # Step 1: Check SQLite Database
-    backend_dir = os.path.dirname(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    )
-    db_paths = [
-        os.path.join(backend_dir, "Backend", "app", "database", "research.db"),
-        os.path.join(backend_dir, "app", "database", "research.db"),
-        os.path.join(os.getcwd(), "app", "database", "research.db"),
-    ]
-
-    for db_p in db_paths:
-        if os.path.exists(db_p):
-            try:
-                conn = sqlite3.connect(db_p)
-                cursor = conn.cursor()
-                for table in ["papers", "documents", "pdf_records", "files"]:
-                    try:
-                        cursor.execute(f"SELECT filename, content FROM {table}")
-                        rows = cursor.fetchall()
-                        for r_name, r_content in rows:
-                            c_name = (
-                                str(r_name)
-                                .lower()
-                                .replace(".pdf", "")
-                                .replace("_", "")
-                                .replace(" ", "")
-                                .replace("(", "")
-                                .replace(")", "")
-                            )
-                            if (
-                                raw_clean_target in c_name
-                                or c_name in raw_clean_target
-                            ) and (r_content and len(r_content.strip()) > 100):
-                                conn.close()
-                                return r_content[:25000]
-                    except Exception:
-                        pass
-                conn.close()
-            except Exception:
-                pass
-
-    # Step 2: Recursive File System Search
-    search_dirs = [
-        os.path.join(backend_dir, "uploads"),
-        os.path.join(backend_dir, "data"),
-        os.path.join(backend_dir, "data", "uploads"),
-        os.path.join(backend_dir, "Backend", "uploads"),
-        os.path.join(backend_dir, "Backend", "data"),
-        os.path.abspath("uploads"),
-        os.path.abspath("data"),
-        os.path.abspath("."),
-    ]
-
-    for directory in search_dirs:
-        if not os.path.exists(directory):
-            continue
-
-        for root, _, files in os.walk(directory):
-            for f in files:
-                f_clean = (
-                    f.lower()
-                    .replace(".pdf", "")
-                    .replace(".txt", "")
-                    .replace("_", "")
-                    .replace(" ", "")
-                    .replace("(", "")
-                    .replace(")", "")
-                )
-                if raw_clean_target in f_clean or f_clean in raw_clean_target:
-                    full_path = os.path.join(root, f)
-                    extracted = extract_text_from_file_universal(full_path)
-                    if extracted and len(extracted.strip()) > 100:
-                        return extracted[:25000]
-
-    # Step 3: Vector Store Fallback
-    try:
-        from app.search.vector_store import search_vector_db
-
-        chunks = search_vector_db(
-            query or "methodology architecture evaluation limitations",
-            paper_name,
-            top_k=12,
-        )
-        if chunks:
-            return "\n\n".join(chunks)
-    except Exception:
-        pass
+            print(f"[Context Scanner] OpenAlex title search error: {e}")
 
     return ""
 
@@ -801,7 +610,21 @@ def run_agent(
     # ======================================================
     # Route Intent
     # ======================================================
-    if any(
+    explicit_agent = (kwargs.get("analysis_type") or kwargs.get("agent_type") or "").strip().lower()
+
+    if explicit_agent in ["summary", "executive_summary"]:
+        agent_type = "summary"
+    elif explicit_agent in ["literature", "literature_survey", "survey"]:
+        agent_type = "literature_survey"
+    elif explicit_agent in ["gaps", "gap", "research_gap"]:
+        agent_type = "gaps"
+    elif explicit_agent in ["novelty", "novelty_analysis"]:
+        agent_type = "novelty"
+    elif explicit_agent in ["datasets", "dataset", "dataset_recommendation"]:
+        agent_type = "datasets"
+    elif explicit_agent in ["experiments", "experiment", "experiment_recommendation"]:
+        agent_type = "experiments"
+    elif any(
         k in q_lower
         for k in ["literature", "survey", "related work", "prior work"]
     ):
@@ -1114,7 +937,19 @@ def run_agent(
         output = get_experiment_fn()(active_context)
 
     else:
-        output = get_summary_fn()(active_context)
+        summary_fn = get_summary_fn()
+        try:
+            output = summary_fn(
+                context=active_context,
+                paper_name=paper_name,
+                query=query,
+                pdf_url=pdf_url,
+            )
+        except TypeError:
+            try:
+                output = summary_fn(active_context, query=query)
+            except TypeError:
+                output = summary_fn(active_context)
 
     return {
         "intent": agent_type,

@@ -1,5 +1,10 @@
 from typing import Any, Dict, List, Optional
-from app.llm.multi_api_router import call_cohere_api
+from app.llm.multi_api_router import (
+    call_cohere_api,
+    call_mistral_api,
+    call_groq_api,
+    call_openrouter_api,
+)
 from app.agents.coordinator import load_context_for_paper
 
 
@@ -14,9 +19,8 @@ def summarize_paper(
     pdf_url: Optional[str] = None,
 ) -> str:
     """
-    Generate a factual literature-review summary for one paper.
-
-    The summary is strictly grounded in the supplied paper context.
+    Generate a factual, structured academic summary or query-focused analysis
+    for one paper, strictly grounded in the supplied paper context.
     """
 
     print("\n================ SUMMARY RETRIEVAL DEBUG ================")
@@ -25,10 +29,9 @@ def summarize_paper(
     print(f"QUERY: {query}")
 
     # ------------------------------------------------------
-    # Retrieve actual paper context when paper metadata exists
+    # Retrieve actual paper context if not already provided
     # ------------------------------------------------------
-
-    if paper_name:
+    if paper_name and (not context or len(context.strip()) < 100):
         retrieved_context = load_context_for_paper(
             paper_name=paper_name,
             query=query,
@@ -40,16 +43,8 @@ def summarize_paper(
             f"{len(retrieved_context or '')}"
         )
 
-        if retrieved_context:
-            print(retrieved_context[:3000])
-
         if retrieved_context and len(retrieved_context.strip()) >= 100:
-            context = f"""
-Paper Title: {paper_name}
-
-Retrieved Paper Evidence:
-{retrieved_context}
-"""
+            context = retrieved_context
 
     print("==========================================================\n")
 
@@ -57,254 +52,91 @@ Retrieved Paper Evidence:
         return "Insufficient paper context available for summary."
 
     # ------------------------------------------------------
-    # ONE FINAL PROMPT
+    # Query vs. Standard Summary Prompt
     # ------------------------------------------------------
+    q_clean = (query or "").strip().lower()
+    is_custom_query = bool(
+        q_clean
+        and q_clean not in [
+            "summary",
+            "summarize",
+            "summarize this paper",
+            "executive summary",
+            "executive_summary",
+            "academic research topic",
+        ]
+    )
 
-    question = """
-You are an academic literature-review assistant.
+    if is_custom_query:
+        prompt = f"""You are ResearchX, an expert academic research assistant.
+Analyze the provided research paper context and provide a comprehensive, accurate, evidence-backed answer to the user's specific query.
 
-Write ONE factual summary of the research paper using ONLY the supplied
-paper context.
+USER RESEARCH QUERY:
+"{query.strip()}"
 
-The supplied context is the complete evidence available to you.
+GUIDELINES:
+1. Ground every statement strictly in the provided paper context. Do not invent methods, benchmarks, numbers, or conclusions.
+2. Structure your response in clean, professional Markdown:
+   - **Direct Answer & Key Findings**: Directly address the query with evidence from the paper.
+   - **Methodological & Technical Context**: Detail the relevant architectural, algorithmic, or theoretical mechanisms from the paper.
+   - **Empirical Evidence & Benchmarks**: Cite the datasets, metrics, and quantitative or qualitative outcomes reported.
+   - **Key Implications & Takeaways**: Highlight the significance and practical takeaways.
+3. If specific aspects of the query are not mentioned in the context, explicitly state: "Not specified in the available paper context."
+"""
+    else:
+        prompt = """You are ResearchX, an expert academic research assistant.
+Provide a high-quality, comprehensive, and accurately structured research summary of this paper using ONLY the supplied paper context.
 
-Your highest priority is factual accuracy, not completeness, elegance,
-length, or making the paper sound impressive.
+Format your response in clean, professional Markdown with these exact sections:
 
-STEP 1 — Extract only facts explicitly stated in the context:
+### Executive Overview
+Explain the core research problem, domain motivation, and the primary objective addressed by the authors.
 
-- research problem or objective
-- method or approach
-- datasets, data, or experiments, if explicitly stated
-- evaluation or comparison, if explicitly stated
-- findings or results, if explicitly stated
-- contribution, limitation, or future work ONLY if explicitly stated
+### Methodology & Technical Architecture
+Detail the proposed framework, system design, key algorithms, models, and workflows described in the paper.
 
-STEP 2 — Write a short literature-review paragraph using only those facts.
+### Experimental Findings & Evaluation
+State the datasets, benchmark tasks, evaluation metrics, and reported empirical outcomes or comparisons directly mentioned in the paper.
+
+### Core Contributions & Key Takeaways
+List the main innovations, claimed advantages, and primary takeaways in concise bullet points.
 
 STRICT EVIDENCE RULES:
-
-1. Every sentence must be directly supported by the supplied context.
-
-2. Do not infer anything.
-
-3. Do not convert:
-   "reviews" into "evaluates"
-   "discusses" into "proposes"
-   "categorizes" into "compares"
-   "mentions datasets" into "uses datasets for experiments"
-   "discusses challenges" into "solves challenges"
-
-4. Do not invent:
-   - methods
-   - architectures
-   - datasets
-   - experiments
-   - metrics
-   - numerical results
-   - comparisons
-   - contributions
-   - limitations
-   - future work
-
-5. Do not make claims based on absence.
-   Never write:
-   "does not report..."
-   "does not propose..."
-   "no experiments..."
-   "no results..."
-   unless the context explicitly says so.
-
-6. Do not add implications or interpretation.
-   Do not say that something is important, useful, effective, promising,
-   significant, robust, relevant, or impactful unless the context
-   explicitly supports that wording.
-
-7. Do not add a sentence merely to reach a target word count.
-
-8. If the context contains only a few facts, produce a short summary.
-
-WRITING STYLE:
-
-Write like a researcher making a factual note after reading a paper.
-
-Use simple factual verbs such as:
-examines, studies, reviews, categorizes, discusses, describes,
-analyzes, reports, identifies, proposes, evaluates
-
-Use these verbs only when the supplied context supports them.
-
-Avoid repetitive openings such as:
-"This paper presents..."
-"This study provides..."
-"The paper offers..."
-
-Do NOT use promotional or generic academic wording.
-
-NEVER USE these phrases:
-
-"comprehensive survey"
-"comprehensive review"
-"comprehensive overview"
-"insightful"
-"valuable insights"
-"provides an overview"
-"offers an overview"
-"delves into"
-"plays a crucial role"
-"paves the way"
-"opens new avenues"
-"promising"
-"significant contribution"
-"important contribution"
-"robust solution"
-"effective solution"
-"highly relevant"
-"advances the field"
-"advancing the field"
-"guides future work"
-"enhances the development"
-"demonstrates the potential"
-"current state of the field"
-"need for further research"
-"need for improved methodologies"
-"identified challenges"
-unless those exact facts are explicitly stated in the context.
-
-Do not replace these phrases with equivalent promotional wording.
-
-NO FILLER:
-
-Do not write sentences such as:
-
-"The survey covers a range of topics."
-"The paper provides an insightful evaluation."
-"The study provides useful insights."
-"The work highlights the importance of..."
-"The research has important implications..."
-"The paper contributes to the field..."
-
-unless the context explicitly states those facts.
-
-If all supported facts have already been stated, STOP.
-
-LENGTH:
-
-Aim for approximately 50–90 words when enough factual information is
-available.
-
-If fewer facts are available, write fewer words.
-
-Never add information just to increase length.
-
-FINAL SELF-CHECK:
-
-Before returning the answer, silently check every sentence:
-
-A. Can this entire sentence be supported by the supplied context?
-B. Did I add any inference?
-C. Did I add any generic academic filler?
-D. Did I claim an experiment, result, contribution, limitation, or
-   future direction that was not explicitly stated?
-E. Did I use promotional wording?
-
-If any answer is yes, remove or rewrite that sentence.
-
-OUTPUT FORMAT:
-
-Return exactly ONE continuous paragraph.
-
-No heading.
-No bullets.
-No numbering.
-No markdown.
-No quotation marks.
-No "Summary:" prefix.
-No explanation.
-No commentary.
-
-Return ONLY the final paragraph.
+1. Every claim must be grounded in the supplied context. Do not invent methods, numbers, or baselines.
+2. If specific details (e.g. dataset numbers or baselines) are not mentioned in the excerpt, summarize what is provided without guessing.
 """
 
+    # ------------------------------------------------------
+    # Execute LLM with multi-API fallback
+    # ------------------------------------------------------
+    summary = ""
+
+    # Strategy 1: Cohere Command-R (Best for long-context research)
     try:
-        result = call_cohere_api(
-            prompt=question,
-            context=context,
-        )
-
-        if not result or not result.strip():
-            return "Unable to generate a summary for this paper."
-
-        summary = result.strip()
-
-        # --------------------------------------------------
-        # Lightweight deterministic cleanup
-        # --------------------------------------------------
-        forbidden_phrases = [
-            "comprehensive survey",
-            "comprehensive review",
-            "comprehensive overview",
-            "insightful",
-            "valuable insights",
-            "provides an overview",
-            "offers an overview",
-            "delves into",
-            "plays a crucial role",
-            "paves the way",
-            "opens new avenues",
-            "promising",
-            "significant contribution",
-            "important contribution",
-            "robust solution",
-            "effective solution",
-            "highly relevant",
-            "advances the field",
-            "advancing the field",
-            "guides future work",
-            "enhances the development",
-            "demonstrates the potential",
-            "current state of the field",
-            "need for further research",
-            "need for improved methodologies",
-        ]
-
-        # If the model violates the style rules, make one
-        # controlled retry with the offending output shown to it.
-        lowered = summary.lower()
-
-        if any(
-            phrase in lowered
-            for phrase in forbidden_phrases
-        ):
-            retry_prompt = f"""
-Rewrite the following paragraph.
-
-Keep ONLY factual statements that are directly supported by the original
-paper context.
-
-Remove generic, promotional, interpretive, or filler wording.
-
-Do not add any new information.
-
-Return exactly one paragraph.
-
-Original generated paragraph:
-{summary}
-"""
-
-            retry = call_cohere_api(
-                prompt=retry_prompt,
-                context=context,
-            )
-
-            if retry and retry.strip():
-                summary = retry.strip()
-
-        return summary
-
+        summary = call_cohere_api(prompt=prompt, context=context)
     except Exception as e:
-        print(f"[Summary Agent Error]: {e}")
-        return "Unable to generate a summary for this paper."
+        print(f"[Summary Agent Cohere Error]: {e}")
+
+    # Strategy 2: Mistral Fallback
+    if not summary or not summary.strip() or "failed" in summary.lower() or "no llm api" in summary.lower():
+        try:
+            print("[Summary Agent] Cohere unavailable, falling back to Mistral...")
+            summary = call_mistral_api(prompt=prompt, context=context)
+        except Exception as e:
+            print(f"[Summary Agent Mistral Error]: {e}")
+
+    # Strategy 3: Groq / OpenRouter Fallback
+    if not summary or not summary.strip() or "failed" in summary.lower() or "no llm api" in summary.lower():
+        try:
+            print("[Summary Agent] Falling back to Groq / OpenRouter...")
+            summary = call_groq_api(prompt=prompt, context=context)
+        except Exception as e:
+            print(f"[Summary Agent Groq Error]: {e}")
+
+    if not summary or not summary.strip():
+        return "Unable to generate an accurate summary from the provided paper context."
+
+    return summary.strip()
 
 
 # ==========================================================

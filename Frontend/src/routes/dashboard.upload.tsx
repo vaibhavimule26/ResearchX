@@ -1,10 +1,12 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import {
   UploadCloud,
   FileText,
   CheckCircle2,
+  Sparkles,
+  ArrowRight,
 } from "lucide-react";
 
 import { PageHeader } from "@/components/dashboard/topbar";
@@ -40,6 +42,7 @@ function UploadPage() {
   const [loadingPapers, setLoadingPapers] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [lastUploadedFilename, setLastUploadedFilename] = useState("");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -81,6 +84,7 @@ function UploadPage() {
         response?.message ||
           "PDF uploaded successfully"
       );
+      setLastUploadedFilename(file.name);
 
       await fetchPapers();
     } catch (error) {
@@ -178,8 +182,23 @@ function UploadPage() {
       </div>
 
       {message && (
-        <div className="mt-4 rounded-xl border border-border/40 bg-secondary/30 p-3 text-sm">
-          {message}
+        <div className="mt-4 rounded-xl border border-border/40 bg-secondary/30 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm">
+          <div className="flex items-center gap-2 text-foreground font-medium">
+            <CheckCircle2 className="h-4 w-4 text-[var(--success)]" />
+            <span>{message}</span>
+          </div>
+          {lastUploadedFilename && (
+            <Link
+              to="/dashboard/summary"
+              search={{ paper: lastUploadedFilename }}
+            >
+              <Button size="sm" variant="hero" className="gap-1.5 h-8 text-xs font-medium cursor-pointer">
+                <Sparkles className="h-3.5 w-3.5" />
+                Analyze with Summary Agent
+                <ArrowRight className="h-3 w-3" />
+              </Button>
+            </Link>
+          )}
         </div>
       )}
 
@@ -208,10 +227,10 @@ function UploadPage() {
               {papers.map((paper, index) => (
                 <li
                   key={`${paper.filename}-${paper.uploaded_at}-${index}`}
-                  className="rounded-xl border border-border/40 bg-secondary/30 p-4"
+                  className="rounded-xl border border-border/40 bg-secondary/30 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                 >
-                  <div className="flex items-center gap-3">
-                    <FileText className="h-5 w-5 text-[var(--electric)]" />
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <FileText className="h-5 w-5 text-[var(--electric)] shrink-0" />
 
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium">
@@ -224,8 +243,24 @@ function UploadPage() {
                       </div>
                     </div>
 
-                    <CheckCircle2 className="h-5 w-5 text-[var(--success)]" />
+                    <CheckCircle2 className="h-5 w-5 text-[var(--success)] shrink-0 hidden sm:block" />
                   </div>
+
+                  <Link
+                    to="/dashboard/summary"
+                    search={{ paper: paper.filename }}
+                    className="shrink-0"
+                  >
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-xs gap-1.5 border-border/60 hover:border-primary/50 cursor-pointer"
+                    >
+                      <Sparkles className="h-3.5 w-3.5 text-primary" />
+                      Summary Agent
+                    </Button>
+                  </Link>
                 </li>
               ))}
             </ul>
