@@ -190,13 +190,22 @@ Generate a clear, authoritative, and evidence-grounded dataset recommendation re
 
         except Exception as e:
             print(f"[Dataset Agent Error for '{title}']: {e}")
-            result = "Unable to generate dataset analysis for this paper."
+            try:
+                cohere_res = call_cohere_api(prompt=question, context=paper_context[:12000])
+                if cohere_res and len(cohere_res.strip()) > 50 and not cohere_res.startswith("Cohere"):
+                    result = cohere_res.strip()
+                else:
+                    groq_res = call_groq_api(prompt=question, context=paper_context[:12000])
+                    if groq_res and len(groq_res.strip()) > 50:
+                        result = groq_res.strip()
+                    else:
+                        result = "Unable to generate dataset analysis for this paper."
+            except Exception:
+                result = "Unable to generate dataset analysis for this paper."
 
         results.append({
             "paper_name": title,
             "result": result.strip()
         })
-
-    return results
 
     return results

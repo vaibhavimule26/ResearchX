@@ -30,6 +30,7 @@ from app.api.ppt import router as ppt_router
 from app.api.presentation import router as presentation_router
 from app.api.dashboard import router as dashboard_router
 from app.api.paper_search import router as paper_search_router
+from app.api.plagiarism import router as plagiarism_router
 
 # Multi-Agent Coordinator & Generator Services
 from app.agents.coordinator import run_agent
@@ -136,15 +137,22 @@ def create_ppt_endpoint(paper_title: str):
 
 @app.post("/api/generate-ieee-report")
 def create_report_endpoint(paper_title: str):
-    s = run_agent(query="summary", paper_name=paper_title)["results"]["summary"]["output"]
-    g = run_agent(query="gaps", paper_name=paper_title)["results"]["gaps"]["output"]
-    e = run_agent(query="experiments", paper_name=paper_title)["results"]["experiments"]["output"]
+    import re
+    report_data = run_agent(query="report", paper_name=paper_title)
+    rep_output = report_data.get("results", {}).get("report", {}).get("output", "")
+    if rep_output and len(rep_output.strip()) > 100:
+        file_path = generate_ieee_pdf(title=paper_title, full_report_markdown=rep_output)
+    else:
+        s = run_agent(query="summary", paper_name=paper_title)["results"]["summary"]["output"]
+        g = run_agent(query="gaps", paper_name=paper_title)["results"]["gaps"]["output"]
+        e = run_agent(query="experiments", paper_name=paper_title)["results"]["experiments"]["output"]
+        file_path = generate_ieee_pdf(paper_title, s, g, e)
 
-    file_path = generate_ieee_pdf(paper_title, s, g, e)
+    clean_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", paper_title.replace(".pdf", "")).strip("_")
     return FileResponse(
         file_path,
         media_type="application/pdf",
-        filename=f"{paper_title[:15]}_IEEE_Report.pdf"
+        filename=f"{clean_name[:25]}_IEEE_Report.pdf",
     )
 
 # ==========================================================
@@ -158,4 +166,5 @@ app.include_router(report_router)
 app.include_router(ppt_router)
 app.include_router(presentation_router)
 app.include_router(dashboard_router)
+app.include_router(plagiarism_router)
 app.include_router(paper_search_router, prefix="/api")

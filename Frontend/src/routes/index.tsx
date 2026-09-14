@@ -5,7 +5,7 @@ import {
   Search, FileText, Sparkles, Lightbulb, Database, FlaskConical,
   BookOpen, FileSpreadsheet, Presentation, Network, GitBranch, Workflow as WorkflowIcon,
   Bot, Brain, Layers, ArrowRight, Play, Calendar, Check, X,
-  Zap, Clock, Target, Shield, Globe, Cpu, ChevronDown, Quote, Star,
+  Zap, Clock, Target, Shield, Globe, Cpu, ChevronDown, Quote, Star, MessageSquare,
 } from "lucide-react";
 import { Navbar } from "@/components/site/navbar";
 import { Footer } from "@/components/site/footer";
@@ -396,6 +396,7 @@ const WORKFLOW = [
   { icon: Bot, name: "Coordinator Agent", desc: "Plans the workflow and routes tasks." },
   { icon: Search, name: "Paper Retrieval Agent", desc: "Discovers relevant papers across databases." },
   { icon: FileText, name: "PDF Analysis Agent", desc: "Parses, chunks and structures PDFs." },
+  { icon: MessageSquare, name: "AI Chat Agent", desc: "Interactive conversational Q&A grounded in uploaded papers." },
   { icon: Sparkles, name: "Summary Agent", desc: "Produces section-aware summaries." },
   { icon: Lightbulb, name: "Research Gap Agent", desc: "Finds limitations and opportunities." },
   { icon: Database, name: "Dataset Agent", desc: "Recommends matching datasets." },

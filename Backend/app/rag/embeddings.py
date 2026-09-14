@@ -52,18 +52,30 @@ def create_embeddings(
 
 
 # ==========================================================
-# Create Single Query Embedding
+# Create Single Query Embedding (with in-memory cache)
 # ==========================================================
+
+import threading
+
+_QUERY_EMBEDDING_CACHE = {}
+_QUERY_EMBEDDING_LOCK = threading.Lock()
+_MAX_QUERY_EMBEDDINGS = 256
+
 
 def create_query_embedding(
     query: str
 ) -> List[float]:
     """
-    Convert a user query into a single embedding.
+    Convert a user query into a single embedding with LRU-style in-memory caching.
     """
 
     if not query or not query.strip():
         return []
+
+    cache_key = query.strip()
+    with _QUERY_EMBEDDING_LOCK:
+        if cache_key in _QUERY_EMBEDDING_CACHE:
+            return _QUERY_EMBEDDING_CACHE[cache_key]
 
     model = get_embedding_model()
 
@@ -73,4 +85,11 @@ def create_query_embedding(
         normalize_embeddings=True
     )
 
-    return embedding.tolist()
+    result = embedding.tolist()
+
+    with _QUERY_EMBEDDING_LOCK:
+        if len(_QUERY_EMBEDDING_CACHE) >= _MAX_QUERY_EMBEDDINGS:
+            _QUERY_EMBEDDING_CACHE.pop(next(iter(_QUERY_EMBEDDING_CACHE)))
+        _QUERY_EMBEDDING_CACHE[cache_key] = result
+
+    return result

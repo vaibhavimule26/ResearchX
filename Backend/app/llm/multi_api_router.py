@@ -40,6 +40,30 @@ def build_user_content(
 
 
 # ==========================================================
+# Reusable Client & Session Cache
+# ==========================================================
+_http_session = requests.Session()
+_cohere_client = None
+_groq_client = None
+
+
+def _get_cohere_client(api_key: str):
+    global _cohere_client
+    if _cohere_client is None:
+        import cohere
+        _cohere_client = cohere.ClientV2(api_key=api_key)
+    return _cohere_client
+
+
+def _get_groq_client(api_key: str):
+    global _groq_client
+    if _groq_client is None:
+        from groq import Groq
+        _groq_client = Groq(api_key=api_key, max_retries=1)
+    return _groq_client
+
+
+# ==========================================================
 # 1. Cohere
 # ==========================================================
 def call_cohere_api(prompt: str, context: str = "") -> str:
@@ -50,9 +74,7 @@ def call_cohere_api(prompt: str, context: str = "") -> str:
         return "No LLM API key is available."
 
     try:
-        import cohere
-
-        co = cohere.ClientV2(api_key=api_key)
+        co = _get_cohere_client(api_key=api_key)
 
         user_content = build_user_content(
             prompt,
@@ -89,12 +111,7 @@ def call_groq_api(prompt: str, context: str = "") -> str:
         return call_mistral_api(prompt, context)
 
     try:
-        from groq import Groq
-
-        client = Groq(
-            api_key=api_key,
-            max_retries=1,
-        )
+        client = _get_groq_client(api_key=api_key)
 
         user_content = build_user_content(
             prompt,
@@ -102,19 +119,18 @@ def call_groq_api(prompt: str, context: str = "") -> str:
             120000
         )
 
-        # Active, high-speed Groq models
+        # Active, verified high-speed models on Groq
         models = [
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
-            "mixtral-8x7b-32768",
-            "gemma2-9b-it",
+            "openai/gpt-oss-120b",
+            "qwen/qwen3.8-27b",
+            "openai/gpt-oss-20b",
+            "qwen/qwen3.6-27b",
+            "groq/compound",
         ]
 
         for model in models:
 
             try:
-                print(f"[Groq] Trying model: {model}")
-
                 res = client.chat.completions.create(
                     model=model,
                     messages=[
@@ -138,18 +154,20 @@ def call_groq_api(prompt: str, context: str = "") -> str:
                         }
                     ],
                     temperature=0.2,
-                    max_tokens=2500
+                    max_tokens=4096
                 )
 
                 output = res.choices[0].message.content
 
                 if output and output.strip():
-                    print(
-                        f"[Groq] Success with model: {model}"
-                    )
                     return output.strip()
 
             except Exception as model_error:
+                err_msg = str(model_error).lower()
+                # Fast failover on rate limit or missing model without stalling
+                if "rate_limit" in err_msg or "429" in err_msg:
+                    print(f"[Groq Rate Limit - {model}]: {model_error}")
+                    break
                 print(
                     f"[Groq Error - {model}]: {model_error}"
                 )
@@ -158,8 +176,8 @@ def call_groq_api(prompt: str, context: str = "") -> str:
     except Exception as e:
         print(f"[Groq Client Error]: {e}")
 
-    print("[Groq] All models failed. Using Mistral fallback.")
-    return call_mistral_api(prompt, context)
+    print("[Groq] Using Cohere fallback.")
+    return call_cohere_api(prompt, context)
 
 
 # ==========================================================
@@ -170,7 +188,7 @@ def call_mistral_api(prompt: str, context: str = "") -> str:
     api_key = os.getenv("MISTRAL_API_KEY")
 
     if not api_key:
-        return call_groq_api(prompt, context)
+        return call_cohere_api(prompt, context)
 
     try:
         user_content = build_user_content(
@@ -179,7 +197,7 @@ def call_mistral_api(prompt: str, context: str = "") -> str:
             120000
         )
 
-        res = requests.post(
+        res = _http_session.post(
             "https://api.mistral.ai/v1/chat/completions",
             headers={
                 "Authorization": f"Bearer {api_key}",
@@ -204,7 +222,7 @@ def call_mistral_api(prompt: str, context: str = "") -> str:
                 "temperature": 0.2,
                 "max_tokens": 2500
             },
-            timeout=60
+            timeout=15
         )
 
         if res.status_code == 200:
@@ -213,13 +231,13 @@ def call_mistral_api(prompt: str, context: str = "") -> str:
             ][0]["message"]["content"].strip()
 
         print(
-            f"[Mistral Error {res.status_code}]: {res.text}"
+            f"[Mistral Error {res.status_code}]: {res.text[:200]}"
         )
 
     except Exception as e:
         print(f"[Mistral Error]: {e}")
 
-    return call_groq_api(prompt, context)
+    return call_cohere_api(prompt, context)
 
 
 # ==========================================================
@@ -239,14 +257,14 @@ def call_openrouter_api(prompt: str, context: str = "") -> str:
             120000
         )
 
-        res = requests.post(
+        res = _http_session.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json"
             },
             json={
-                "model": "meta-llama/llama-3.3-70b-instruct:free",
+                "model": "meta-llama/llama-3.3-70b-instruct",
                 "messages": [
                     {
                         "role": "system",
@@ -263,7 +281,7 @@ def call_openrouter_api(prompt: str, context: str = "") -> str:
                 "temperature": 0.2,
                 "max_tokens": 2500
             },
-            timeout=60
+            timeout=15
         )
 
         if res.status_code == 200:
@@ -273,7 +291,7 @@ def call_openrouter_api(prompt: str, context: str = "") -> str:
 
         print(
             f"[OpenRouter Error {res.status_code}]: "
-            f"{res.text}"
+            f"{res.text[:200]}"
         )
 
     except Exception as e:
@@ -290,7 +308,7 @@ def call_gemini_api(prompt: str, context: str = "") -> str:
     api_key = os.getenv("GEMINI_API_KEY")
 
     if not api_key:
-        return call_groq_api(prompt, context)
+        return call_cohere_api(prompt, context)
 
     user_content = build_user_content(
         prompt,
@@ -317,4 +335,4 @@ def call_gemini_api(prompt: str, context: str = "") -> str:
     except Exception as e:
         print(f"[Gemini API Error]: {e}")
 
-    return call_groq_api(prompt, context)
+    return call_cohere_api(prompt, context)

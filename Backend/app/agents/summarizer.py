@@ -1,3 +1,4 @@
+import concurrent.futures
 from typing import Any, Dict, List, Optional
 from app.llm.multi_api_router import (
     call_cohere_api,
@@ -55,6 +56,10 @@ def summarize_paper(
     # Query vs. Standard Summary Prompt
     # ------------------------------------------------------
     q_clean = (query or "").strip().lower()
+    is_plagiarism_query = any(
+        k in q_clean
+        for k in ["plagiar", "similarity", "originality", "integrity", "authenticity", "copy"]
+    )
     is_custom_query = bool(
         q_clean
         and q_clean not in [
@@ -67,43 +72,105 @@ def summarize_paper(
         ]
     )
 
-    if is_custom_query:
-        prompt = f"""You are ResearchX, an expert academic research assistant.
-Analyze the provided research paper context and provide a comprehensive, accurate, evidence-backed answer to the user's specific query.
+    if is_plagiarism_query:
+        prompt = f"""You are ResearchX, an expert academic research intelligence and integrity assistant.
+Analyze the provided research paper context to perform a brief, concise, and systematic PLAGIARISM & ORIGINALITY AUDIT along with an executive summary.
 
 USER RESEARCH QUERY:
 "{query.strip()}"
 
-GUIDELINES:
-1. Ground every statement strictly in the provided paper context. Do not invent methods, benchmarks, numbers, or conclusions.
-2. Structure your response in clean, professional Markdown:
-   - **Direct Answer & Key Findings**: Directly address the query with evidence from the paper.
-   - **Methodological & Technical Context**: Detail the relevant architectural, algorithmic, or theoretical mechanisms from the paper.
-   - **Empirical Evidence & Benchmarks**: Cite the datasets, metrics, and quantitative or qualitative outcomes reported.
-   - **Key Implications & Takeaways**: Highlight the significance and practical takeaways.
-3. If specific aspects of the query are not mentioned in the context, explicitly state: "Not specified in the available paper context."
+STRICT CITATION DIRECTIVE:
+- DO NOT include citations, bracketed numbers, section tags (e.g. [Sec. 1], [Table 1], [Eq. 1]), or bibliography lists. Citations are explicitly NOT needed.
+- Ground all findings strictly in the provided paper context. Be brief, concise, and systematic.
+
+FORMAT YOUR RESPONSE IN CLEAN MARKDOWN WITH THESE SECTIONS:
+
+### 1. Plagiarism & Originality Audit
+- **Estimated Originality / Similarity Risk:** Provide an explicit risk assessment (e.g., Low Similarity Risk — Estimated Originality: 90-95%) with brief rationale.
+- **Novelty vs. Prior Art Overlap:** Delineate genuine author innovations versus concepts, modules, or baselines adopted from existing academic literature.
+- **Textual Uniqueness & Phrasing:** Evaluate whether the paper demonstrates authentic, original scholarly formulation or exhibits signs of boilerplate, repetitive formulas, or copied phrasing.
+- **Attribution & Paraphrasing Integrity:** Check whether prior methods and benchmarks are properly framed rather than improperly claimed as the authors' own inventions.
+- **Academic Integrity Verdict:** A clear scholarly verdict on publication readiness, originality, and plagiarism risk.
+
+### 2. Executive Overview of Paper
+- **Core Problem Addressed:** Concise 1-2 sentence explanation of the limitation or bottleneck targeted by the paper.
+- **Proposed Solution & Architecture:** How the authors solve the problem and how the system operates.
+
+### 3. Key Findings & Empirical Benchmarks
+- **Evaluated Benchmarks & Models:** Datasets, task suites, and LLM backbones evaluated.
+- **Reported Outcomes:** Concrete quantitative performance metrics and accuracy gains reported.
+
+### 4. Core Contributions & Key Takeaways
+- **Main Contributions:** 2-3 bullet points highlighting the primary technical and practical innovations.
+- **Practical Takeaways:** The essential conclusions from the work.
+"""
+    elif is_custom_query:
+        prompt = f"""You are ResearchX, an expert academic research intelligence assistant.
+Provide a brief, concise, and systematic analysis of the provided research paper addressing the user's query, followed by an originality and plagiarism assessment.
+
+USER RESEARCH QUERY:
+"{query.strip()}"
+
+STRICT CITATION DIRECTIVE:
+- DO NOT include citations, bracketed numbers, section tags (e.g. [Sec. 1], [Table 1], [Eq. 1]), or bibliography lists. Citations are explicitly NOT needed.
+- Ground every statement strictly in the context with high factual accuracy. Be brief, concise, and systematic.
+
+FORMAT YOUR RESPONSE IN CLEAN MARKDOWN USING THESE SECTIONS:
+
+### 1. Direct Synthesis & Core Findings
+A brief, systematic direct answer to the query with explicit paper evidence, without any citation brackets or section markers.
+
+### 2. Systematic Technical Architecture & Methodology
+- **Core Mechanism & Design:** Concise breakdown of framework components, representations, and workflows relevant to the query.
+- **Operational Workflow:** Step-by-step technical execution or protocol.
+- **Key Technical Distinctions:** How this mechanism specifically differs from traditional baselines.
+
+### 3. Empirical Evidence, Benchmarks & Metrics
+- **Evaluated Benchmarks & Tasks:** Specific benchmark suites and domains evaluated.
+- **Quantitative Metrics & Results:** Concrete numerical metrics, accuracy percentages, and comparisons reported.
+
+### 4. Critical Takeaways & Limitations
+- **Primary Advantages:** Key technical differentiators.
+- **Reported Limitations:** Computational overhead or boundary constraints acknowledged by authors.
+
+### 5. Plagiarism & Originality Audit
+- **Estimated Originality / Similarity Risk:** Explicit risk level and estimated originality percentage (e.g., Low Similarity Risk — Estimated Originality: 90-95%).
+- **Novelty vs. Prior Art Overlap:** Delineation of original mechanisms versus standard techniques adopted from prior literature.
+- **Textual & Conceptual Authenticity:** Assessment of whether the methodology and explanations are genuinely original scholarly prose.
+- **Academic Integrity Verdict:** Scholarly verdict evaluating proper framing of prior art and publication-grade originality.
 """
     else:
-        prompt = """You are ResearchX, an expert academic research assistant.
-Provide a high-quality, comprehensive, and accurately structured research summary of this paper using ONLY the supplied paper context.
+        prompt = """You are ResearchX, an expert academic research intelligence assistant.
+Provide a brief, concise, and systematic research summary of this paper using ONLY the supplied paper context, followed by an originality and plagiarism assessment.
 
-Format your response in clean, professional Markdown with these exact sections:
+STRICT CITATION DIRECTIVE:
+- DO NOT include citations, bracketed numbers, section tags (e.g. [Sec. 1], [Table 1], [Eq. 1]), or bibliography lists. Citations are explicitly NOT needed.
+- Ground every claim, number, and finding strictly in the context. Be brief, concise, and systematic.
 
-### Executive Overview
-Explain the core research problem, domain motivation, and the primary objective addressed by the authors.
+FORMAT YOUR RESPONSE IN CLEAN MARKDOWN USING THESE SECTIONS:
 
-### Methodology & Technical Architecture
-Detail the proposed framework, system design, key algorithms, models, and workflows described in the paper.
+### 1. Research Problem, Motivation & Objectives
+- **Problem Statement:** Concise 1-2 sentence statement of the core problem or limitation in prior work.
+- **Core Research Objective:** The central thesis, proposed system, and high-level goal.
 
-### Experimental Findings & Evaluation
-State the datasets, benchmark tasks, evaluation metrics, and reported empirical outcomes or comparisons directly mentioned in the paper.
+### 2. Methodology & Technical Architecture
+- **Framework Architecture:** Concise overview of the system pipeline, modular roles, and communication channels.
+- **Operational Mechanism:** Step-by-step breakdown of how the method executes.
+- **Key Architectural Novelty:** Primary technical distinction from baseline methods.
 
-### Core Contributions & Key Takeaways
-List the main innovations, claimed advantages, and primary takeaways in concise bullet points.
+### 3. Empirical Evaluation & Quantitative Findings
+- **Task Domains & Datasets:** Specific benchmark suites and evaluation domains tested.
+- **Quantitative Results & Gains:** Explicit accuracy numbers, percentage improvements, and metrics reported.
 
-STRICT EVIDENCE RULES:
-1. Every claim must be grounded in the supplied context. Do not invent methods, numbers, or baselines.
-2. If specific details (e.g. dataset numbers or baselines) are not mentioned in the excerpt, summarize what is provided without guessing.
+### 4. Core Contributions & Takeaways
+- **Theoretical & Technical Innovations:** 2-3 concise bullet points highlighting primary contributions.
+- **Practical Takeaways:** Key practical conclusions from the work.
+
+### 5. Plagiarism & Originality Audit
+- **Estimated Originality / Similarity Risk:** Explicit risk level and estimated originality percentage (e.g., Low Similarity Risk — Estimated Originality: 90-95%).
+- **Novelty vs. Prior Art Overlap:** Delineation of original mechanisms versus standard techniques adopted from prior literature.
+- **Textual & Conceptual Authenticity:** Assessment of whether the methodology and explanations are genuinely original scholarly prose.
+- **Academic Integrity Verdict:** Scholarly verdict evaluating proper contextualization of prior art and publication-grade originality.
 """
 
     # ------------------------------------------------------
@@ -136,7 +203,109 @@ STRICT EVIDENCE RULES:
     if not summary or not summary.strip():
         return "Unable to generate an accurate summary from the provided paper context."
 
-    return summary.strip()
+    import re
+
+    # Strip any LLM meta-disclaimers about placeholders if present
+    cleaned = summary.strip()
+    placeholder_phrases = [
+        "Please note that the citations provided are placeholders and should be replaced with the actual references from the research paper.",
+        "Please note that the citations provided are placeholders",
+        "Note: Citations provided are placeholders",
+    ]
+    for phrase in placeholder_phrases:
+        cleaned = cleaned.replace(phrase, "").strip()
+
+    # Strictly strip any accidental bracketed citations or section markers
+    cleaned = re.sub(r'\[\s*(?:Sec\.|Section|Table|Figure|Fig\.|Eq\.|Equation)\s*[\w\d\.\,\s\-]+\]', '', cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r'\[[A-Z][a-zA-Z\s\.\-]+,\s*\d{4}[a-z]?\]', '', cleaned)
+    cleaned = re.sub(r'\[\d+\]', '', cleaned)
+    cleaned = re.sub(r'###\s*5?\.\s*Evidence\s*Map.*?(?=(###|$))', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
+    cleaned = cleaned.replace("\x00", "").replace("\ufffd", "—")
+
+    # Ensure markdown headers have clean blank lines before them
+    cleaned = re.sub(r'([^\n])\n(#{1,6}\s+)', r'\1\n\n\2', cleaned)
+
+    return cleaned.strip()
+
+
+# ==========================================================
+# Workspace Single Paper Summary
+# ==========================================================
+
+def summarize_paper_for_workspace(
+    context: str,
+    paper_name: Optional[str] = None,
+    topic: str = "",
+) -> str:
+    """
+    Generate a concise, factual executive summary for one paper inside AI Workspace.
+    Tailored specifically for multi-paper comparative research without plagiarism audits.
+    """
+    topic_clean = (topic or "").strip()
+    has_custom_topic = bool(
+        topic_clean
+        and topic_clean.lower() not in [
+            "summary",
+            "summarize",
+            "executive summary",
+            "academic research topic",
+        ]
+    )
+
+    prompt = f"""You are ResearchX, an expert academic research assistant.
+Analyze the provided research paper context to generate a concise, factual, and structured research summary.
+{f'RESEARCH TOPIC FOCUS: {topic_clean}' if has_custom_topic else ''}
+
+FORMAT YOUR RESPONSE IN CLEAN MARKDOWN FOLLOWING THIS EXACT STRUCTURE:
+
+### Executive Overview
+- **Research Problem:** Concise statement of the core problem, domain, and primary research objective.
+- **Methodology & Framework:** The proposed approach, architecture, or algorithmic technique.
+
+### Key Findings & Empirical Evaluation
+- **Primary Performance:** Quantitative metrics, accuracy gain, or primary benchmark results.
+- **Baseline Comparisons:** How the model compares to relevant baselines or prior work.
+
+### Limitations & Open Challenges
+- **Author Limitations:** Limitations explicitly acknowledged in the paper.
+- **Future Directions:** Unresolved challenges and suggested future research directions.
+
+### Core Takeaways
+1. **[Key Innovation]:** Primary innovative takeaway.
+2. **[Practical Utility]:** Practical implementation value.
+3. **[Research Significance]:** Broader research significance.
+
+STRICT RULES:
+- Rely strictly on facts present in the paper context. Do NOT hallucinate.
+- If information is missing, clearly write: "Not specified in the paper."
+"""
+
+    summary = ""
+    try:
+        summary = call_cohere_api(prompt=prompt, context=context)
+    except Exception as e:
+        print(f"[Workspace Summary Cohere Error]: {e}")
+
+    if not summary or not summary.strip() or "failed" in summary.lower() or "no llm api" in summary.lower():
+        try:
+            summary = call_mistral_api(prompt=prompt, context=context)
+        except Exception as e:
+            print(f"[Workspace Summary Mistral Error]: {e}")
+
+    if not summary or not summary.strip() or "failed" in summary.lower() or "no llm api" in summary.lower():
+        try:
+            summary = call_groq_api(prompt=prompt, context=context)
+        except Exception as e:
+            print(f"[Workspace Summary Groq Error]: {e}")
+
+    if not summary or not summary.strip():
+        return "Unable to generate paper summary from the available context."
+
+    import re
+    cleaned = summary.strip()
+    cleaned = cleaned.replace("\x00", "").replace("\ufffd", "—")
+    cleaned = re.sub(r'([^\n])\n(#{1,6}\s+)', r'\1\n\n\2', cleaned)
+    return cleaned.strip()
 
 
 # ==========================================================
@@ -145,13 +314,13 @@ STRICT EVIDENCE RULES:
 
 def summarize_workspace(topic: str, papers: List[Any]) -> List[Dict[str, str]]:
     """
-    Generate one concise summary for every selected paper.
+    Generate one concise summary for every selected paper in the AI Workspace.
+    Uses concurrent workers when multiple papers are selected.
     """
+    if not papers:
+        return []
 
-    results = []
-
-    for paper in papers:
-
+    def _summarize_single(paper):
         if isinstance(paper, dict):
             title = paper.get("title") or "Untitled Paper"
             authors_raw = paper.get("authors") or "Not specified"
@@ -251,19 +420,22 @@ Paper Content:
 {paper_context}
 """
 
-        summary = summarize_paper(
+        summary = summarize_paper_for_workspace(
             context=full_context,
             paper_name=title,
-            query=topic,
-            pdf_url=pdf_url,
+            topic=topic,
         )
 
-        results.append({
+        return {
             "paper_name": title,
             "result": summary,
-        })
+        }
 
-    return results
+    if len(papers) == 1:
+        return [_summarize_single(papers[0])]
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(papers))) as executor:
+        return list(executor.map(_summarize_single, papers))
 
 
 # ==========================================================

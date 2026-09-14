@@ -210,7 +210,8 @@ function WorkspacePage() {
   // Run All AI Agents Smoothly
   // ----------------------------------------------------
   const handleRunAllAgents = async () => {
-    if (!prompt.trim()) {
+    const effectiveTopic = (correctedQuery || prompt).trim();
+    if (!effectiveTopic) {
       alert("Please enter a research topic.");
       return;
     }
@@ -255,10 +256,17 @@ function WorkspacePage() {
       );
 
       const data = await runAllWorkspaceAgents(
-        prompt.trim(),
+        effectiveTopic,
         currentSessionId,
         chosenPapers
       );
+
+      if (data.interpreted_query && data.interpreted_query.trim().toLowerCase() !== prompt.trim().toLowerCase()) {
+        setCorrectedQuery(data.interpreted_query.trim());
+        if (!originalQuery) {
+          setOriginalQuery(prompt.trim());
+        }
+      }
 
       if (data.agent_results) {
         setAgentResults(data.agent_results);
@@ -292,6 +300,12 @@ function WorkspacePage() {
   // Run Individual Agent
   // ----------------------------------------------------
   const handleRunSingleAgent = async (agentDef: AgentDef) => {
+    const effectiveTopic = (correctedQuery || prompt).trim();
+    if (!effectiveTopic) {
+      alert("Please enter a research topic.");
+      return;
+    }
+
     if (selectedPapers.length === 0) {
       alert("Please select at least one paper.");
       return;
@@ -334,7 +348,7 @@ function WorkspacePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           papers: chosenPapers,
-          query: prompt,
+          query: effectiveTopic,
           analysis_type: agentDef.key,
           session_id: currentSessionId,
         }),
@@ -345,6 +359,12 @@ function WorkspacePage() {
       }
 
       const data = await response.json();
+      if (data.interpreted_query && data.interpreted_query.trim().toLowerCase() !== prompt.trim().toLowerCase()) {
+        setCorrectedQuery(data.interpreted_query.trim());
+        if (!originalQuery) {
+          setOriginalQuery(prompt.trim());
+        }
+      }
       const resultPayload = data.results !== undefined ? data.results : data.result || data.data;
 
       setAgentResults((prev) => ({

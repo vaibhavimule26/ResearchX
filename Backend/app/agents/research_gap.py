@@ -2,7 +2,12 @@ import re
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from app.agents.coordinator import load_context_for_paper
-from app.llm.multi_api_router import call_mistral_api
+from app.llm.multi_api_router import (
+    call_cohere_api,
+    call_mistral_api,
+    call_groq_api,
+    call_openrouter_api,
+)
 
 
 def clean_gap_output(text: str) -> str:
@@ -23,10 +28,19 @@ def clean_gap_output(text: str) -> str:
     )
     result = re.sub(r"\s*```$", "", result)
 
-    # Handle literal escaped newlines from raw string outputs
-    result = result.replace("\\r\\n", "\n")
-    result = result.replace("\\n", "\n")
-    result = result.replace("\\r", "\n")
+    # Handle literal escaped characters
+    result = (
+        result.replace("\\r\\n", "\n")
+        .replace("\\n", "\n")
+        .replace("\\r", "\n")
+        .replace('\\"', '"')
+        .replace("\\'", "'")
+        .replace("\x00", "")
+        .replace("\ufffd", "—")
+    )
+
+    # Ensure clean blank line before markdown headers
+    result = re.sub(r'([^\n])\n(#{1,6}\s+)', r'\1\n\n\2', result)
 
     # Normalize excessive blank lines
     result = re.sub(r"\n{3,}", "\n\n", result)
@@ -38,7 +52,7 @@ def run_gap_agent(
     papers: List[Any],
 ) -> List[Dict[str, str]]:
     """
-    Generate one combined research-gap table for all workspace papers.
+    Generate a research-gap comparison table for workspace papers.
     """
 
     if not papers:
@@ -74,6 +88,14 @@ def run_gap_agent(
             venue = paper.get("venue") or ""
             pdf_url = paper.get("pdf_url") or paper.get("url")
 
+        elif isinstance(paper, str):
+            title = paper
+            abstract = ""
+            authors = ""
+            published = ""
+            venue = ""
+            pdf_url = None
+
         else:
             title = (
                 getattr(paper, "title", None)
@@ -100,14 +122,11 @@ def run_gap_agent(
 
         # Retrieve actual paper evidence
         try:
-            if pdf_url and str(pdf_url).startswith("http"):
-                paper_context = load_context_for_paper(
-                    paper_name=title,
-                    query=topic,
-                    pdf_url=pdf_url,
-                )
-            else:
-                paper_context = ""
+            paper_context = load_context_for_paper(
+                paper_name=title,
+                query=topic,
+                pdf_url=pdf_url,
+            )
         except Exception as e:
             print(f"[Gap RAG Error - {title}]: {e}")
             paper_context = ""
@@ -144,8 +163,7 @@ Paper Context:
         f"[Gap Agent] Combined context length: {len(combined_context)} for {len(papers)} papers."
     )
 
-    question = f"""
-You are the Research Gap Analysis Agent of ResearchX.
+    question = f"""You are the Research Gap Analysis Agent of ResearchX.
 
 Research Topic: {topic}
 
@@ -167,35 +185,51 @@ RULES:
 3. Research Gap: State the primary unresolved challenge, methodological limitation, dataset constraint, or open question exposed or tackled by this paper.
 4. Explanation: Explain why this is a research gap and its implications for future work.
 5. Evidence: Mention the specific method, architectural constraint, evaluation setup, or task domain from the paper supporting this gap.
-6. Do NOT write 'no abstract found' or 'not specified'. If full text is limited, synthesize the research gap from the paper's title, topic scope, and methodology.
+6. Do NOT write 'no abstract found' or 'not specified'. Synthesize the research gap from the paper's title, topic scope, and methodology context.
 7. Include ALL {len(papers)} papers in the table ({len(papers)} total rows).
 8. Keep every table cell concise and clear.
 9. Return ONLY the Markdown table.
 """
 
+    result = ""
+
+    # Strategy 1: Cohere Command-R
     try:
-        result = call_mistral_api(
+        result = call_cohere_api(
             prompt=question,
             context=combined_context,
         )
-
-        result = clean_gap_output(result)
-
-        if not result or "| :---" not in result:
-            rows = []
-            for t in paper_titles:
-                rows.append(f"| {t} | Not clearly established from context | General domain research gap | Evidence based on supplied summary |")
-            result = (
-                "| Paper | Research Gap | Explanation | Evidence |\n"
-                "| :--- | :--- | :--- | :--- |\n" +
-                "\n".join(rows)
-            )
-
     except Exception as e:
-        print(f"[Gap Agent Error]: {e}")
+        print(f"[Gap Agent Cohere Error]: {e}")
+
+    # Strategy 2: Mistral Fallback
+    if not result or "| :---" not in result or "failed" in result.lower() or "no llm api" in result.lower():
+        try:
+            print("[Gap Agent] Falling back to Mistral...")
+            result = call_mistral_api(
+                prompt=question,
+                context=combined_context,
+            )
+        except Exception as e:
+            print(f"[Gap Agent Mistral Error]: {e}")
+
+    # Strategy 3: Groq / OpenRouter Fallback
+    if not result or "| :---" not in result or "failed" in result.lower() or "no llm api" in result.lower():
+        try:
+            print("[Gap Agent] Falling back to Groq / OpenRouter...")
+            result = call_groq_api(
+                prompt=question,
+                context=combined_context,
+            )
+        except Exception as e:
+            print(f"[Gap Agent Groq Error]: {e}")
+
+    result = clean_gap_output(result)
+
+    if not result or "| :---" not in result:
         rows = []
         for t in paper_titles:
-            rows.append(f"| {t} | Not clearly established | Unable to analyze full evidence | Standard domain challenge |")
+            rows.append(f"| {t} | Not clearly established from context | General domain research gap | Evidence based on supplied summary |")
         result = (
             "| Paper | Research Gap | Explanation | Evidence |\n"
             "| :--- | :--- | :--- | :--- |\n" +
@@ -213,169 +247,160 @@ def analyze_research_gap(
     title: str = "Uploaded Research Paper",
     query: str = "",
     paper_name: str = "",
-    **kwargs,
+    context: str = "",
+    pdf_url: Optional[str] = None,
+    **kwargs: Any,
 ) -> str:
     """
-    Analyze research gaps from directly supplied paper text.
-
-    This function is kept for backward compatibility.
+    Analyze research gaps from an uploaded research paper context.
+    Identifies evidence-grounded research gaps, explicit author limitations,
+    and actionable future research directions based specifically on the paper content.
     """
 
-    content = (
-        text
-        or query
-        or kwargs.get("context", "")
-    )
-
     doc_title = (
-        title
-        or paper_name
+        paper_name
+        or title
+        or kwargs.get("filename", "")
         or "Uploaded Research Paper"
     )
 
-    if not content or len(content.strip()) < 50:
-        return (
-            "No sufficient paper evidence was provided "
-            "to identify reliable research gaps."
+    content = (
+        context
+        or text
+        or kwargs.get("paper_context", "")
+        or ""
+    )
+
+    # If context is not passed directly, retrieve it from the uploaded paper
+    if not content or len(content.strip()) < 100:
+        retrieved = load_context_for_paper(
+            paper_name=doc_title,
+            query=query or "research gaps and limitations",
+            pdf_url=pdf_url,
         )
+        if retrieved and len(retrieved.strip()) >= 100:
+            content = retrieved
 
-    paper_context = content[:12000]
+    if not content or len(content.strip()) < 50:
+        return "Insufficient paper context available to identify reliable research gaps. Please verify the uploaded document."
 
-    prompt = f"""
-You are the Research Gap Analysis Agent of ResearchX.
+    paper_context = content[:30000]
 
-Research Topic: {query or doc_title}
+    prompt = f"""You are ResearchX, an expert academic research intelligence assistant specializing in rigorous gap analysis.
+Analyze the provided research paper context to identify authentic, evidence-grounded RESEARCH GAPS and limitations.
 
-Paper Title: {doc_title}
+PAPER TITLE: {doc_title}
+{f'RESEARCH FOCUS / QUERY: {query.strip()}' if query and query.strip().lower() not in ['gaps', 'research_gap', 'gap', 'summary'] else ''}
 
-Paper Context:
-{paper_context}
+STRICT EVIDENCE DIRECTIVES:
+1. Every research gap MUST be grounded specifically in the supplied research paper context.
+2. Differentiate between:
+   - Explicit limitations directly acknowledged by the authors in the paper.
+   - Genuine unresolved methodological, algorithmic, or empirical boundaries exposed by the paper's design or evaluation setup.
+3. Do NOT invent hypothetical scenarios, unrelated benchmarks, or imaginary attack vectors unless explicitly discussed in the paper.
+4. Output in clean, professional Markdown.
 
-Analyze ONLY the supplied research paper context.
+FORMAT YOUR RESPONSE USING THESE EXACT SECTIONS:
 
-Your task is to identify the MOST RELEVANT research gaps
-that are directly supported by the paper.
+### 1. Research Scope & Problem Overview
+- **Domain & Core Focus:** Specific academic domain and the central research objective addressed by this paper.
+- **Target Bottleneck:** The specific technical bottleneck, algorithmic limitation, or inefficiency the authors set out to resolve.
+- **Foundational Assumptions:** Key operating assumptions made by the proposed methodology.
 
-VERY IMPORTANT:
-Do NOT treat every unmentioned experiment, dataset, architecture,
-modality, attack, or future possibility as a research gap.
+### 2. Primary Research Gaps & Limitations
+#### Research Gap 1: [Concise Technical Title of the Gap]
+- **Gap Category:** [e.g., Algorithmic Complexity / Generalization Boundary / Empirical Scope / Scalability Constraint / Hardware Dependency]
+- **Core Limitation:** 2-3 precise sentences explaining the gap and why it presents a bottleneck.
+- **Evidence from Paper:** Concrete evidence, mechanism, metric, or boundary condition stated in the uploaded text.
+- **Open Research Challenge:** What remains unresolved for subsequent researchers.
 
-A research gap is valid ONLY when:
-1. The paper explicitly states it as a limitation, challenge,
-   unresolved issue, or future work; OR
-2. The supplied context clearly shows that the paper leaves a
-   specific research question unanswered.
+#### Research Gap 2: [Concise Technical Title of the Gap]
+- **Gap Category:** [e.g., Algorithmic Complexity / Generalization Boundary / Empirical Scope / Scalability Constraint / Hardware Dependency]
+- **Core Limitation:** 2-3 precise sentences explaining the gap.
+- **Evidence from Paper:** Concrete evidence or limitation from the paper context.
+- **Open Research Challenge:** What remains unresolved for subsequent researchers.
 
-Do NOT create a gap merely because the paper did not mention
-something.
+#### Research Gap 3: [Concise Technical Title of the Gap]
+- **Gap Category:** [e.g., Algorithmic Complexity / Generalization Boundary / Empirical Scope / Scalability Constraint / Hardware Dependency]
+- **Core Limitation:** 2-3 precise sentences explaining the gap.
+- **Evidence from Paper:** Concrete evidence or limitation from the paper context.
+- **Open Research Challenge:** What remains unresolved for subsequent researchers.
 
-Do NOT generate "unseen fake news types", "adversarial attacks",
-"temporal dynamics", "source credibility", "other domains",
-"other datasets", or similar future possibilities unless the
-supplied context explicitly supports them.
+### 3. Author-Acknowledged Limitations vs. Unresolved Boundaries
+- **Explicit Limitations Acknowledged by Authors:** Direct limitations, failure modes, or computational bounds admitted by the authors.
+- **Implicit Architectural & Empirical Boundaries:** Inherent constraints evident from the framework design, dataset diversity, or evaluation scope.
 
-If only 1 or 2 evidence-supported gaps can be established,
-return only 1 or 2 gaps. Do NOT force exactly 3 gaps.
+### 4. Actionable Future Research Directions
+1. **[Future Direction 1]:** Concrete, high-impact research vector to address Research Gap 1.
+2. **[Future Direction 2]:** Concrete, high-impact research vector to address Research Gap 2.
+3. **[Future Direction 3]:** Concrete, high-impact research vector to address Research Gap 3.
 
-OUTPUT FORMAT:
-
-Research Gap 1: [Short academic title]
-Explanation: [2-3 concise sentences explaining the gap using
-only evidence from the supplied paper context.]
-
-Research Gap 2: [Short academic title]
-Explanation: [2-3 concise sentences.]
-
-Research Gap 3: [Short academic title]
-Explanation: [2-3 concise sentences.]
-
-(Only include Research Gap 2 or 3 if genuinely supported by the context.)
-
-IMPORTANT RULES:
-
-- Return ONLY the research gaps.
-- Generate 1 to 3 gaps maximum.
-- Prioritize the MOST RELEVANT gaps.
-- Do not generate generic future research ideas.
-- A missing feature is NOT automatically a research gap.
-- Do not assume that something was not studied merely because
-  it is not present in the abstract.
-- Prefer gaps explicitly stated by the paper.
-- Do not claim that a limitation exists without evidence.
-- Do not compare with papers that are not present in the context.
-- Do not use outside knowledge.
-- Do not invent citations, authors, datasets, metrics,
-  experiments, or results.
-- Do not invent numerical values.
-- Do not use Markdown headings.
-- Do not use Markdown bullets.
-- Do not use asterisks.
-- Do not use JSON.
-- Do not use tables.
-- Do not add greetings or explanations.
-- Keep the complete answer under 350 words.
-
-If the supplied context is insufficient to establish a gap,
-write:
-
-Research Gap: Not clearly established from the available paper context.
+### 5. Research Gap Summary Matrix
+| Identified Gap | Category | Paper Evidence / Limitation | Future Research Opportunity |
+| :--- | :--- | :--- | :--- |
+| [Short title 1] | [Category] | [Brief paper evidence] | [Opportunity] |
+| [Short title 2] | [Category] | [Brief paper evidence] | [Opportunity] |
+| [Short title 3] | [Category] | [Brief paper evidence] | [Opportunity] |
 """
 
+    raw_output = ""
+
+    # Strategy 1: Cohere Command-R (Exceptional for factual grounding & structured reasoning)
     try:
-
-        raw_output = call_mistral_api(
-            prompt=prompt,
-            context=paper_context,
-        )
-
-        cleaned_output = clean_gap_output(raw_output)
-
-        if not cleaned_output:
-            return (
-                "Research Gap: Not clearly established from the available paper context."
-            )
-
-        return cleaned_output
-
+        raw_output = call_cohere_api(prompt=prompt, context=paper_context)
     except Exception as e:
+        print(f"[Research Gap Cohere Error]: {e}")
 
-        print(f"[Research Gap Agent Error]: {e}")
+    # Strategy 2: Mistral Fallback
+    if not raw_output or not raw_output.strip() or "failed" in raw_output.lower() or "no llm api" in raw_output.lower():
+        try:
+            print("[Research Gap] Cohere unavailable, falling back to Mistral...")
+            raw_output = call_mistral_api(prompt=prompt, context=paper_context)
+        except Exception as e:
+            print(f"[Research Gap Mistral Error]: {e}")
 
-        return (
-            "Unable to analyze research gaps for "
-            "the provided paper context."
-        )
+    # Strategy 3: Groq / OpenRouter Fallback
+    if not raw_output or not raw_output.strip() or "failed" in raw_output.lower() or "no llm api" in raw_output.lower():
+        try:
+            print("[Research Gap] Falling back to Groq / OpenRouter...")
+            raw_output = call_groq_api(prompt=prompt, context=paper_context)
+        except Exception as e:
+            print(f"[Research Gap Groq Error]: {e}")
+
+    cleaned_output = clean_gap_output(raw_output)
+
+    if not cleaned_output:
+        return "Unable to analyze research gaps for the provided paper context."
+
+    return cleaned_output
 
 
-def find_research_gaps(*args, **kwargs):
+def find_research_gaps(*args: Any, **kwargs: Any) -> str:
     """
-    Backwards-compatible alias used by coordinator.py
-    and other report-generation components.
+    Backwards-compatible alias used by coordinator.py, report.py, and workflow graph.
     """
-
+    kw = dict(kwargs)
     text_arg = (
         args[0]
         if len(args) > 0
-        else kwargs.get(
-            "text",
-            kwargs.get("query", ""),
-        )
+        else kw.pop("context", kw.pop("text", kw.get("query", "")))
     )
 
     title_arg = (
         args[1]
         if len(args) > 1
-        else kwargs.get(
-            "title",
-            kwargs.get(
-                "paper_name",
-                "Research Paper",
-            ),
-        )
+        else kw.pop("paper_name", kw.pop("title", "Uploaded Research Paper"))
     )
+
+    kw.pop("context", None)
+    kw.pop("text", None)
+    kw.pop("title", None)
+    kw.pop("paper_name", None)
 
     return analyze_research_gap(
         text=text_arg,
         title=title_arg,
-        **kwargs,
+        context=text_arg,
+        paper_name=title_arg,
+        **kw,
     )

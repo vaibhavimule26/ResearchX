@@ -17,8 +17,20 @@ except ImportError:
     def run_agent(query: str, paper_name: Optional[str] = None):
         return f"Processed query: {query}"
 
+try:
+    from app.agents.chat_agent import chat_with_paper
+except ImportError:
+    def chat_with_paper(query: str, paper_name: Optional[str] = None, session_id: Optional[str] = None, history=None):
+        return {
+            "answer": f"Processed paper query: {query}",
+            "sources": [],
+            "paper_name": paper_name,
+            "session_id": session_id or "default_session",
+        }
+
 
 router = APIRouter(prefix="", tags=["search"])
+
 
 
 # ==========================================================
@@ -163,6 +175,37 @@ async def handle_search_endpoint(
             "count": 0,
         }
 
+    # ==========================================================
+    # DOCUMENT-GROUNDED AI CHAT FOR UPLOADED PAPERS
+    # ==========================================================
+    if request and request.paper_name and request.paper_name.strip():
+        print(f"\n[ResearchX Chat] Document-grounded Q&A for: {request.paper_name}")
+        chat_result = chat_with_paper(
+            query=raw_query,
+            paper_name=request.paper_name,
+            session_id=request.session_id or "default_session",
+        )
+        return {
+            "status": "success",
+            "answer": chat_result["answer"],
+            "sources": chat_result.get("sources", []),
+            "paper_name": request.paper_name,
+            "session_id": chat_result.get("session_id"),
+            "query": raw_query,
+            "original_query": raw_query,
+            "results": [],
+            "papers": [],
+            "count": 0,
+            "data": {
+                "answer": chat_result["answer"],
+                "sources": chat_result.get("sources", []),
+                "paper_name": request.paper_name,
+                "session_id": chat_result.get("session_id"),
+                "query": raw_query,
+                "original_query": raw_query,
+            },
+        }
+
     print(f"\n[ResearchX] User Query: {raw_query}")
     search_query = normalize_research_query(raw_query)
     print(f"[ResearchX] Normalized Query: {search_query}")
@@ -242,6 +285,24 @@ async def handle_search_endpoint(
 @router.post("/ask")
 async def handle_ask(request: AskRequest):
     try:
+        if request.paper_name and request.paper_name.strip():
+            chat_result = chat_with_paper(
+                query=request.question,
+                paper_name=request.paper_name,
+            )
+            return {
+                "status": "success",
+                "data": {
+                    "answer": chat_result["answer"],
+                    "sources": chat_result.get("sources", []),
+                    "paper_name": request.paper_name,
+                    "session_id": chat_result.get("session_id"),
+                },
+                "answer": chat_result["answer"],
+                "sources": chat_result.get("sources", []),
+                "paper_name": request.paper_name,
+            }
+
         raw_agent_response = run_agent(
             query=request.question,
             paper_name=request.paper_name,
@@ -265,6 +326,7 @@ async def handle_ask(request: AskRequest):
             "status": "error",
             "message": str(e),
         }
+
 
 
 # ==========================================================

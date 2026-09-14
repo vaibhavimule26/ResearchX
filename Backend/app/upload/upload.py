@@ -6,8 +6,10 @@ from app.database.chroma import collection
 from app.pdf.extractor import extract_text_from_pdf
 from app.chunking.chunker import chunk_text
 from app.embeddings.embedder import create_embeddings
-from app.rag.embeddings import create_embeddings as create_rag_embeddings
 from app.rag.retriever import index_paper
+from app.rag.rag_service import clear_rag_cache
+from app.agents.coordinator import clear_context_cache
+from app.services.plagiarism_service import clear_plagiarism_cache
 from app.utils.response import success_response
 
 import shutil
@@ -130,44 +132,36 @@ async def upload_pdf(file: UploadFile = File(...)):
         }
 
         # ==========================
-        # Store Vectors in ChromaDB
+        # Store Vectors in ChromaDB (Batch)
         # ==========================
-        for i in range(len(chunks)):
-            collection.add(
-                ids=[
-                    f"{file.filename}_{i}"
-                ],
-                documents=[
-                    chunks[i]
-                ],
-                embeddings=[
-                    embeddings[i]
-                ],
-                metadatas=[
-                    {
-                        "paper_name": file.filename,
-                        "chunk_number": i,
-                        "uploaded_at": uploaded_at
-                    }
-                ]
-            )
-
-        # ==========================
-        # RAG ChromaDB Index
-        # ==========================
-        rag_embeddings = create_rag_embeddings(
-            chunks
+        chunk_ids = [f"{file.filename}_{i}" for i in range(len(chunks))]
+        chunk_metadatas = [
+            {
+                "paper_name": file.filename,
+                "chunk_number": i,
+                "uploaded_at": uploaded_at,
+            }
+            for i in range(len(chunks))
+        ]
+        collection.add(
+            ids=chunk_ids,
+            documents=chunks,
+            embeddings=embeddings,
+            metadatas=chunk_metadatas,
         )
 
+        # ==========================
+        # RAG ChromaDB Index (Reuse embeddings)
+        # ==========================
         index_paper(
             paper_id=file.filename,
             chunks=chunks,
-            embeddings=rag_embeddings,
+            embeddings=embeddings,
             metadata={
                 "paper_name": file.filename,
                 "title": file.filename,
-                "uploaded_at": uploaded_at
-            }
+                "uploaded_at": uploaded_at,
+            },
         )
 
         # ==========================
@@ -176,6 +170,11 @@ async def upload_pdf(file: UploadFile = File(...)):
         result = papers_collection.insert_one(
             paper
         )
+
+        # Invalidate in-memory caches
+        clear_context_cache()
+        clear_rag_cache()
+        clear_plagiarism_cache()
 
         return success_response(
             message="PDF uploaded successfully",
@@ -213,7 +212,6 @@ async def get_papers():
         papers_collection.find(
             {},
             {
-                "_id": 0,
                 "embeddings": 0,
                 "text": 0,
                 "chunks": 0
@@ -222,6 +220,12 @@ async def get_papers():
     )
 
     for paper in raw_papers:
+        if "_id" in paper:
+            doc_id = str(paper["_id"])
+            paper["id"] = doc_id
+            paper["paper_id"] = doc_id
+            del paper["_id"]
+
         # Guarantee filename is present
         if not paper.get("filename"):
             paper["filename"] = paper.get("title") or "Untitled Paper"
@@ -324,6 +328,10 @@ async def delete_paper(filename: str):
             and os.path.exists(file_path)
         ):
             os.remove(file_path)
+
+        clear_context_cache()
+        clear_rag_cache()
+        clear_plagiarism_cache()
 
         return success_response(
             message="Paper deleted successfully",

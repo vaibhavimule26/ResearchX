@@ -147,13 +147,96 @@ export async function deletePaper(
 }
 
 // ==========================
-// AI Search
+// Plagiarism / Similarity Checker
 // ==========================
+export interface PlagiarismMatch {
+  id: number;
+  match_id?: number;
+  page: number;
+  matched_text: string;
+  source_passage: string;
+  source_document: string;
+  source_page?: number;
+  similarity: number;
+  similarity_percentage?: number;
+  match_type: "exact_match" | "near_exact" | "similar_text" | string;
+}
+
+export interface PlagiarismResult {
+  pdf_id: string;
+  filename: string;
+  title: string;
+  similarity_score: number;
+  original_content: number;
+  originality_score?: number;
+  potential_matches_count: number;
+  matches_count?: number;
+  comparison_sources_count: number;
+  total_compared_documents?: number;
+  comparison_scope: string;
+  comparison_corpus?: string;
+  total_words_analyzed: number;
+  matches: PlagiarismMatch[];
+  checked_at: string;
+  analyzed_at?: string;
+  cached?: boolean;
+}
+
+export interface PlagiarismCheckResponse {
+  success: boolean;
+  message: string;
+  data: PlagiarismResult;
+}
+
+export async function checkPlagiarism(
+  pdfId: string,
+  forceRefresh: boolean = false
+): Promise<PlagiarismCheckResponse> {
+  const response = await fetch(`${API_BASE_URL}/plagiarism/check`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      pdf_id: pdfId,
+      force_refresh: forceRefresh,
+    }),
+  });
+
+  return handleResponse(response);
+}
+
+// ==========================
+// AI Search & Document Chat
+// ==========================
+export interface ChatSource {
+  chunk_index?: number;
+  page?: number | string | null;
+  section?: string | null;
+  snippet?: string;
+  distance?: number;
+}
+
+export interface ChatResponse {
+  status: string;
+  answer?: string;
+  sources?: ChatSource[];
+  paper_name?: string;
+  session_id?: string;
+  data?: {
+    answer?: string;
+    sources?: ChatSource[];
+    paper_name?: string;
+    session_id?: string;
+    query?: string;
+  };
+}
+
 export async function searchPaper(
   query: string,
   sessionId: string,
   paperName?: string | null
-) {
+): Promise<ChatResponse> {
   const response = await fetch(
     `${API_BASE_URL}/search`,
     {
@@ -171,6 +254,7 @@ export async function searchPaper(
 
   return handleResponse(response);
 }
+
 
 // ==========================
 // Search History
@@ -298,8 +382,16 @@ export type ReportResponse = {
 };
 
 export async function generateIEEEReport(
-  paperName: string
+  paperName: string,
+  query?: string
 ): Promise<ReportResponse> {
+  const payload: Record<string, any> = {
+    paper_name: paperName,
+  };
+  if (query?.trim()) {
+    payload.query = query.trim();
+  }
+
   const response = await fetch(
     `${API_BASE_URL}/report/generate`,
     {
@@ -307,13 +399,52 @@ export async function generateIEEEReport(
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        paper_name: paperName,
-      }),
+      body: JSON.stringify(payload),
     }
   );
 
   return handleResponse(response);
+}
+
+export async function downloadIEEEReportPDF(
+  paperName: string,
+  query?: string,
+  content?: string
+): Promise<Blob> {
+  const payload: Record<string, any> = {
+    paper_name: paperName,
+  };
+  if (query?.trim()) {
+    payload.query = query.trim();
+  }
+  if (content?.trim()) {
+    payload.content = content.trim();
+  }
+
+  const response = await fetch(
+    `${API_BASE_URL}/report/pdf`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    }
+  );
+
+  if (!response.ok) {
+    let errorDetail = "Failed to download IEEE report PDF";
+    try {
+      const errorJson = await response.json();
+      errorDetail = errorJson.detail || errorDetail;
+    } catch {
+      const errText = await response.text();
+      if (errText) errorDetail = errText;
+    }
+    throw new Error(errorDetail);
+  }
+
+  return await response.blob();
 }
 
 // ==========================
@@ -342,6 +473,40 @@ export async function generatePresentation(
   );
 
   return handleResponse(response);
+}
+
+export async function exportPPTX(
+  paperName: string,
+  presentationText?: string
+): Promise<Blob> {
+  const payload: Record<string, any> = {
+    paper_name: paperName,
+  };
+  if (presentationText?.trim()) {
+    payload.presentation_text = presentationText.trim();
+  }
+
+  const response = await fetch(`${API_BASE_URL}/ppt/generate`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    let errorDetail = "Failed to export presentation (.pptx)";
+    try {
+      const errJson = await response.json();
+      errorDetail = errJson.detail || errorDetail;
+    } catch {
+      const errText = await response.text();
+      if (errText) errorDetail = errText;
+    }
+    throw new Error(errorDetail);
+  }
+
+  return await response.blob();
 }
 
 // ==========================

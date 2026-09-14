@@ -3,6 +3,7 @@ import os
 import re
 import json
 import sqlite3
+import threading
 import requests
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -202,6 +203,29 @@ If information is unavailable, write:
     )
 
 
+def get_ppt_fn():
+    try:
+        from app.agents.ppt_agent import generate_presentation
+
+        return generate_presentation
+    except ImportError as e:
+        print(f"PPT Agent Import Error: {e}")
+
+    return lambda ctx, **kwargs: "Unable to load PPT Generator Agent."
+
+
+def get_report_fn():
+    try:
+        from app.agents.report_agent import generate_ieee_report
+
+        return generate_ieee_report
+    except ImportError as e:
+        print(f"IEEE Report Agent Import Error: {e}")
+
+    return lambda ctx, **kwargs: "Unable to load IEEE Report Agent."
+
+
+
 # ==========================================================
 # Universal File Text Extractor
 # ==========================================================
@@ -258,9 +282,67 @@ def extract_text_from_file_universal(file_path: str) -> str:
 
 
 # ==========================================================
+# In-Memory Paper Context Cache
+# ==========================================================
+
+_PAPER_CONTEXT_CACHE: Dict[Tuple[str, str, Optional[str]], str] = {}
+_PAPER_CONTEXT_LOCK = threading.Lock()
+_MAX_CONTEXT_CACHE = 128
+
+
+def clear_context_cache():
+    """Clear cached paper contexts (e.g. after fresh PDF upload or deletion)."""
+    with _PAPER_CONTEXT_LOCK:
+        _PAPER_CONTEXT_CACHE.clear()
+    print("[Context Scanner] In-memory paper context cache cleared.")
+
+
+def load_context_for_paper(
+    paper_name: Optional[str],
+    query: str = "",
+    pdf_url: Optional[str] = None,
+) -> str:
+    """
+    Cached facade for loading paper context across MongoDB, disk, and vector stores.
+    """
+    if not paper_name or not isinstance(paper_name, str):
+        paper_name = str(paper_name) if paper_name else ""
+
+    if not paper_name.strip():
+        return ""
+
+    cache_key = (
+        paper_name.strip(),
+        (query or "").strip(),
+        pdf_url.strip() if pdf_url else None,
+    )
+
+    with _PAPER_CONTEXT_LOCK:
+        if cache_key in _PAPER_CONTEXT_CACHE:
+            cached_ctx = _PAPER_CONTEXT_CACHE[cache_key]
+            if cached_ctx:
+                print(f"[Context Cache Hit] Found cached context for paper: {paper_name} ({len(cached_ctx)} chars)")
+                return cached_ctx
+
+    context = _scan_context_for_paper(
+        paper_name=paper_name,
+        query=query,
+        pdf_url=pdf_url,
+    )
+
+    if context and len(context.strip()) > 50:
+        with _PAPER_CONTEXT_LOCK:
+            if len(_PAPER_CONTEXT_CACHE) >= _MAX_CONTEXT_CACHE:
+                _PAPER_CONTEXT_CACHE.pop(next(iter(_PAPER_CONTEXT_CACHE)))
+            _PAPER_CONTEXT_CACHE[cache_key] = context
+
+    return context
+
+
+# ==========================================================
 # Context Scanner across Database, Vector Stores & Disk
 # ==========================================================
-def load_context_for_paper(
+def _scan_context_for_paper(
     paper_name: Optional[str],
     query: str = "",
     pdf_url: Optional[str] = None,
@@ -612,7 +694,7 @@ def run_agent(
     # ======================================================
     explicit_agent = (kwargs.get("analysis_type") or kwargs.get("agent_type") or "").strip().lower()
 
-    if explicit_agent in ["summary", "executive_summary"]:
+    if explicit_agent in ["summary", "executive_summary", "plagiarism", "plagiarism_check", "originality"]:
         agent_type = "summary"
     elif explicit_agent in ["literature", "literature_survey", "survey"]:
         agent_type = "literature_survey"
@@ -624,6 +706,16 @@ def run_agent(
         agent_type = "datasets"
     elif explicit_agent in ["experiments", "experiment", "experiment_recommendation"]:
         agent_type = "experiments"
+    elif explicit_agent in ["ppt", "presentation", "slides", "powerpoint"]:
+        agent_type = "presentation"
+    elif explicit_agent in ["report", "ieee", "ieee_report", "manuscript", "ieee_paper"]:
+        agent_type = "report"
+    elif any(
+        k in q_lower
+        for k in ["plagiar", "similarity", "authenticity"]
+    ):
+        agent_type = "summary"
+
     elif any(
         k in q_lower
         for k in ["literature", "survey", "related work", "prior work"]
@@ -669,6 +761,26 @@ def run_agent(
     ):
         agent_type = "datasets"
 
+    elif any(
+        k in q_lower for k in ["presentation", "powerpoint", "slide deck", "generate ppt", "make slides"]
+    ):
+        agent_type = "presentation"
+
+    elif any(
+        k in q_lower
+        for k in [
+            "ieee report",
+            "generate report",
+            "ieee paper",
+            "ieee format",
+            "research report",
+            "full report",
+            "manuscript",
+            "compile report",
+        ]
+    ):
+        agent_type = "report"
+
     else:
         agent_type = "summary"
 
@@ -705,7 +817,7 @@ def run_agent(
     if (
         agent_type == "literature_survey"
         and isinstance(paper_list, list)
-        and len(paper_list) >= 1
+        and len(paper_list) > 1
     ):
         try:
             from app.agents.literature_agent import run_literature_agent
@@ -881,11 +993,26 @@ def run_agent(
     # Dispatch to Multi-Agent Function
     # ======================================================
     if agent_type == "literature_survey":
-        output = get_literature_fn()(active_context)
+        lit_fn = get_literature_fn()
+        try:
+            output = lit_fn(
+                context=active_context,
+                paper_name=paper_name,
+                query=query,
+                pdf_url=pdf_url,
+            )
+        except TypeError:
+            try:
+                output = lit_fn(
+                    active_context,
+                    paper_name=paper_name or "Uploaded Research Paper",
+                )
+            except TypeError:
+                output = lit_fn(active_context)
 
     elif agent_type == "gaps":
         try:
-            if isinstance(paper_list, list) and len(paper_list) >= 1:
+            if isinstance(paper_list, list) and len(paper_list) > 1:
                 from app.agents.research_gap import run_gap_agent
 
                 gap_results = run_gap_agent(
@@ -916,10 +1043,25 @@ def run_agent(
                 output = "\n".join(combined_output)
 
             else:
-                output = get_gap_fn()(active_context)
+                gap_fn = get_gap_fn()
+                try:
+                    output = gap_fn(
+                        context=active_context,
+                        paper_name=paper_name,
+                        query=query,
+                        pdf_url=pdf_url,
+                    )
+                except TypeError:
+                    try:
+                        output = gap_fn(
+                            active_context,
+                            paper_name=paper_name or "Uploaded Research Paper",
+                        )
+                    except TypeError:
+                        output = gap_fn(active_context)
 
         except Exception as e:
-            print(f"[Multi-Paper Gap Agent Error]: {e}")
+            print(f"[Gap Agent Error]: {e}")
             output = get_gap_fn()(active_context)
 
     elif agent_type == "novelty":
@@ -934,7 +1076,97 @@ def run_agent(
             output = dataset_fn(active_context)
 
     elif agent_type == "experiments":
-        output = get_experiment_fn()(active_context)
+        try:
+            if isinstance(paper_list, list) and len(paper_list) > 1:
+                from app.agents.experiment_agent import run_experiment_agent
+
+                exp_results = run_experiment_agent(
+                    topic=query,
+                    papers=paper_list,
+                )
+
+                combined_output = []
+                for index, item in enumerate(exp_results, start=1):
+                    paper_title = item.get(
+                        "paper_name",
+                        "Untitled Paper",
+                    )
+                    paper_result = item.get(
+                        "result",
+                        "No sufficient paper evidence was provided to design accurate experiments.",
+                    )
+                    combined_output.append(
+                        f"\n\n{'=' * 70}\n"
+                        f"PAPER {index}: {paper_title}\n"
+                        f"{'=' * 70}\n\n"
+                        f"{paper_result}"
+                    )
+                output = "\n".join(combined_output)
+
+            else:
+                exp_fn = get_experiment_fn()
+                try:
+                    output = exp_fn(
+                        context=active_context,
+                        paper_name=paper_name,
+                        query=query,
+                        pdf_url=pdf_url,
+                    )
+                except TypeError:
+                    try:
+                        output = exp_fn(
+                            active_context,
+                            paper_name=paper_name or "Uploaded Research Paper",
+                        )
+                    except TypeError:
+                        output = exp_fn(active_context)
+
+        except Exception as e:
+            print(f"[Experiment Agent Error]: {e}")
+            output = get_experiment_fn()(active_context)
+    elif agent_type == "presentation":
+        try:
+            ppt_fn = get_ppt_fn()
+            try:
+                output = ppt_fn(
+                    context=active_context,
+                    paper_name=paper_name,
+                    query=query,
+                    pdf_url=pdf_url,
+                )
+            except TypeError:
+                try:
+                    output = ppt_fn(
+                        active_context,
+                        paper_name=paper_name or "Uploaded Research Paper",
+                    )
+                except TypeError:
+                    output = ppt_fn(active_context)
+        except Exception as e:
+            print(f"[Presentation Agent Error]: {e}")
+            output = get_ppt_fn()(active_context)
+
+    elif agent_type == "report":
+        try:
+            report_fn = get_report_fn()
+            try:
+                output = report_fn(
+                    context=active_context,
+                    paper_name=paper_name,
+                    query=query,
+                    pdf_url=pdf_url,
+                )
+            except TypeError:
+                try:
+                    output = report_fn(
+                        active_context,
+                        paper_name=paper_name or "Uploaded Research Paper",
+                    )
+                except TypeError:
+                    output = report_fn(active_context)
+        except Exception as e:
+            print(f"[IEEE Report Agent Error]: {e}")
+            output = get_report_fn()(active_context)
 
     else:
         summary_fn = get_summary_fn()

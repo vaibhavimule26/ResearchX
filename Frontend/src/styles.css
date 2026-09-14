@@ -51,8 +51,10 @@
   --font-display: "Space Grotesk", "Inter", sans-serif;
 }
 
-/* Dark mode is the default — values live on :root */
-:root {
+/* Dark mode (Default) */
+:root,
+.dark,
+[data-theme="dark"] {
   color-scheme: dark;
 
   --radius: 0.875rem;
@@ -60,7 +62,7 @@
   --background: oklch(0.13 0.015 270);
   --foreground: oklch(0.985 0 0);
 
-  --card: oklch(0.17 0.018 270 / 0.6);
+  --card: oklch(0.17 0.018 270 / 0.65);
   --card-foreground: oklch(0.985 0 0);
 
   --popover: oklch(0.16 0.018 270);
@@ -90,7 +92,7 @@
   --success: oklch(0.72 0.18 160);
   --warning: oklch(0.78 0.17 75);
 
-  --sidebar: oklch(0.11 0.015 270 / 0.85);
+  --sidebar: oklch(0.11 0.015 270 / 0.95);
   --sidebar-foreground: oklch(0.94 0 0);
   --sidebar-primary: oklch(0.62 0.23 295);
   --sidebar-primary-foreground: oklch(0.99 0 0);
@@ -106,6 +108,82 @@
 
   --shadow-glow: 0 0 40px -10px oklch(0.62 0.23 295 / 0.55);
   --shadow-elegant: 0 20px 60px -20px oklch(0 0 0 / 0.6);
+
+  --glass-bg: oklch(0.18 0.02 270 / 0.6);
+  --glass-strong-bg: oklch(0.16 0.02 270 / 0.85);
+  --grid-line: oklch(1 0 0 / 0.03);
+  --gradient-text-bg: linear-gradient(135deg, oklch(0.85 0.12 295), oklch(0.78 0.16 240));
+}
+
+/* Light mode (Academic Research Theme) */
+.light,
+[data-theme="light"] {
+  color-scheme: light;
+
+  --radius: 0.875rem;
+
+  --background: oklch(0.985 0.005 270);
+  --foreground: oklch(0.16 0.02 270);
+
+  --card: oklch(1 0 0 / 0.92);
+  --card-foreground: oklch(0.16 0.02 270);
+
+  --popover: oklch(0.995 0.003 270);
+  --popover-foreground: oklch(0.16 0.02 270);
+
+  --primary: oklch(0.52 0.23 295);
+  --primary-foreground: oklch(0.99 0 0);
+
+  --secondary: oklch(0.94 0.012 270);
+  --secondary-foreground: oklch(0.2 0.02 270);
+
+  --muted: oklch(0.94 0.01 270);
+  --muted-foreground: oklch(0.45 0.025 270);
+
+  --accent: oklch(0.92 0.03 285);
+  --accent-foreground: oklch(0.2 0.03 285);
+
+  --destructive: oklch(0.55 0.22 25);
+  --destructive-foreground: oklch(0.99 0 0);
+
+  --border: oklch(0.88 0.015 270 / 0.85);
+  --input: oklch(0.9 0.015 270 / 0.9);
+  --ring: oklch(0.52 0.23 295);
+
+  --electric: oklch(0.52 0.2 240);
+  --purple-glow: oklch(0.55 0.24 300);
+  --success: oklch(0.52 0.18 160);
+  --warning: oklch(0.6 0.17 75);
+
+  --sidebar: oklch(0.97 0.008 270 / 0.95);
+  --sidebar-foreground: oklch(0.2 0.02 270);
+  --sidebar-primary: oklch(0.52 0.23 295);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.92 0.02 270);
+  --sidebar-accent-foreground: oklch(0.15 0.02 270);
+  --sidebar-border: oklch(0.88 0.015 270 / 0.7);
+  --sidebar-ring: oklch(0.52 0.23 295);
+
+  --gradient-primary: linear-gradient(135deg, oklch(0.52 0.23 295), oklch(0.55 0.2 240));
+  --gradient-glow: radial-gradient(circle at 30% 20%, oklch(0.52 0.23 295 / 0.12), transparent 60%),
+    radial-gradient(circle at 80% 60%, oklch(0.55 0.2 240 / 0.1), transparent 60%);
+  --gradient-hero: linear-gradient(135deg, oklch(0.985 0.005 270) 0%, oklch(0.95 0.025 290) 50%, oklch(0.985 0.005 270) 100%);
+
+  --shadow-glow: 0 0 30px -8px oklch(0.52 0.23 295 / 0.25);
+  --shadow-elegant: 0 10px 35px -12px oklch(0.2 0.02 270 / 0.12);
+
+  --glass-bg: oklch(1 0 0 / 0.82);
+  --glass-strong-bg: oklch(1 0 0 / 0.94);
+  --grid-line: oklch(0 0 0 / 0.04);
+  --gradient-text-bg: linear-gradient(135deg, oklch(0.48 0.22 295), oklch(0.44 0.2 240));
+}
+
+/* Polished theme transition */
+html.theme-transition,
+html.theme-transition *,
+html.theme-transition *::before,
+html.theme-transition *::after {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.15s ease, box-shadow 0.2s ease !important;
 }
 
 @layer base {
@@ -128,19 +206,19 @@
 }
 
 @utility glass {
-  background: oklch(0.18 0.02 270 / 0.55);
+  background: var(--glass-bg);
   backdrop-filter: blur(20px) saturate(140%);
-  border: 1px solid oklch(1 0 0 / 0.08);
+  border: 1px solid var(--border);
 }
 
 @utility glass-strong {
-  background: oklch(0.16 0.02 270 / 0.8);
+  background: var(--glass-strong-bg);
   backdrop-filter: blur(28px) saturate(160%);
-  border: 1px solid oklch(1 0 0 / 0.1);
+  border: 1px solid var(--border);
 }
 
 @utility gradient-text {
-  background: linear-gradient(135deg, oklch(0.85 0.12 295), oklch(0.78 0.16 240));
+  background: var(--gradient-text-bg);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;

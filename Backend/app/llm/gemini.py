@@ -31,20 +31,23 @@ def get_configured_model():
         return ChatMistralAI(
             model="mistral-small-latest",
             mistral_api_key=mistral_key,
-            temperature=0.1
+            temperature=0.1,
+            max_tokens=4096,
         )
     elif groq_key:
         return ChatGroq(
             model_name="llama-3.1-8b-instant",
             groq_api_key=groq_key,
-            temperature=0.1
+            temperature=0.1,
+            max_tokens=4096,
         )
     elif openrouter_key:
         return ChatOpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=openrouter_key,
             model="deepseek/deepseek-chat",
-            temperature=0.1
+            temperature=0.1,
+            max_tokens=4096,
         )
     else:
         raise ValueError("No active API keys found in .env (Mistral, Groq, or OpenRouter required).")
@@ -97,6 +100,21 @@ QUESTION / TASK:
         except Exception as error:
             last_error = error
             logger.warning(f"Generation attempt {attempt + 1} failed: {str(error)}")
-            time.sleep(1.5)
+            # Fast failover if rate limited (429)
+            if "429" in str(error) or "rate" in str(error).lower():
+                break
+            time.sleep(0.5)
+
+    # Fallback to multi_api_router if primary model fails or is rate limited
+    try:
+        from app.llm.multi_api_router import call_groq_api, call_cohere_api
+        groq_resp = call_groq_api(prompt=question, context=context)
+        if groq_resp and len(groq_resp.strip()) > 50 and not groq_resp.startswith("Groq API error"):
+            return groq_resp.strip()
+        cohere_resp = call_cohere_api(prompt=question, context=context)
+        if cohere_resp and len(cohere_resp.strip()) > 50 and not cohere_resp.startswith("Cohere API error"):
+            return cohere_resp.strip()
+    except Exception as fb_err:
+        logger.warning(f"Fallback generation failed: {fb_err}")
 
     raise RuntimeError(f"Request failed after retries: {str(last_error)}")

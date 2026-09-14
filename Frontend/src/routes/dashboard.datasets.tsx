@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -13,17 +13,29 @@ import {
   Layers,
   ArrowRight,
   ShieldCheck,
+  Check,
+  FlaskConical,
+  BookOpen,
+  FileSpreadsheet,
+  ExternalLink,
 } from "lucide-react";
 
 import { PageHeader } from "@/components/dashboard/topbar";
 import { Button } from "@/components/ui/button";
+import { PaperSelectorCard } from "@/components/dashboard/paper-selector-card";
+import { AIProcessingCard } from "@/components/dashboard/ai-processing-card";
+import { EmptyState } from "@/components/dashboard/empty-state";
+import { ErrorState } from "@/components/dashboard/error-state";
 import { getPapers, runAnalysis } from "@/lib/api";
 
 export const Route = createFileRoute("/dashboard/datasets")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    paper: typeof search.paper === "string" ? search.paper : "",
+  }),
   head: () => ({
     meta: [
       {
-        title: "Dataset Recommendations — ResearchX",
+        title: "Dataset Intelligence & Benchmarks — ResearchX",
       },
     ],
   }),
@@ -43,6 +55,25 @@ const PRESET_QUERIES = [
   "Multimodal Vision-Language Reasoning & Visual QA",
   "Autonomous Driving Multi-Sensor 3D Object Detection",
   "Financial Fraud & Tabular Transaction Anomaly Detection",
+];
+
+const DATASET_STAGES = [
+  {
+    title: "Analyzing Research Domain & Modality",
+    description: "Extracting problem domain, task formulation, and input-output schemas...",
+  },
+  {
+    title: "Understanding Dataset Requirements & Constraints",
+    description: "Verifying size, ground-truth quality, and licensing constraints...",
+  },
+  {
+    title: "Finding Relevant Benchmarks & Baselines",
+    description: "Curating high-similarity gold-standard evaluation datasets...",
+  },
+  {
+    title: "Ranking Candidates & Synthesizing Recommendations",
+    description: "Structuring technical selection justifications and access links...",
+  },
 ];
 
 // Clean and extract standard markdown content safely
@@ -86,9 +117,11 @@ function extractMarkdown(raw: unknown): string {
 }
 
 function DatasetsPage() {
+  const search = useSearch({ from: "/dashboard/datasets" });
+
   const [mode, setMode] = useState<InputMode>("paper");
   const [papers, setPapers] = useState<Paper[]>([]);
-  const [selectedPaper, setSelectedPaper] = useState("");
+  const [selectedPaper, setSelectedPaper] = useState(search.paper || "");
   const [customQuery, setCustomQuery] = useState("");
   const [recommendations, setRecommendations] = useState("");
 
@@ -108,7 +141,12 @@ function DatasetsPage() {
 
         setPapers(uploadedPapers);
 
-        if (uploadedPapers.length > 0) {
+        if (search.paper) {
+          const match = uploadedPapers.find(
+            (p) => p.filename.toLowerCase() === search.paper.toLowerCase()
+          );
+          setSelectedPaper(match ? match.filename : search.paper);
+        } else if (uploadedPapers.length > 0 && !selectedPaper) {
           setSelectedPaper(uploadedPapers[0].filename);
         }
       } catch (err) {
@@ -121,7 +159,7 @@ function DatasetsPage() {
     };
 
     loadPapers();
-  }, []);
+  }, [search.paper]);
 
   const handleRecommend = async () => {
     if (loading) return;
@@ -187,10 +225,10 @@ function DatasetsPage() {
 
     const content = [
       "ResearchX Dataset Intelligence & Benchmark Report",
-      "=" .repeat(60),
+      "=".repeat(60),
       targetTitle,
       `Generated At: ${new Date().toISOString()}`,
-      "=" .repeat(60),
+      "=".repeat(60),
       "",
       recommendations,
     ].join("\n");
@@ -212,280 +250,423 @@ function DatasetsPage() {
   };
 
   return (
-    <div className="min-w-0">
+    <div className="min-w-0 space-y-6">
       <PageHeader
         title="Dataset Intelligence & Benchmarks"
         subtitle={
           mode === "paper"
             ? selectedPaper
-              ? `Discover highly similar benchmark datasets for '${selectedPaper}'.`
-              : "Select an uploaded research paper to extract and match datasets."
-            : "Enter a research query or topic to find authoritative, peer-reviewed benchmark datasets."
+              ? `Discover high-similarity gold-standard benchmark datasets for '${selectedPaper}'.`
+              : "Select an uploaded research paper to extract task requirements and match benchmarks."
+            : "Enter a research query or domain to find authoritative, peer-reviewed benchmark datasets."
         }
         action={
-          <div className="flex gap-2">
-            <Button
-              variant="glass"
-              onClick={copyRecommendations}
-              disabled={!recommendations || loading}
-              className="gap-1.5"
-            >
-              {copied ? (
-                <>
-                  <CheckCircle2 className="h-4 w-4 text-[var(--success)]" />
-                  Copied
-                </>
-              ) : (
-                <>
-                  <Copy className="h-4 w-4" />
-                  Copy Report
-                </>
-              )}
-            </Button>
-
-            <Button
-              variant="hero"
-              onClick={downloadRecommendations}
-              disabled={!recommendations || loading}
-              className="gap-1.5"
-            >
-              <Download className="h-4 w-4" />
-              Export
-            </Button>
-          </div>
-        }
-      />
-
-      {/* Mode Switcher & Input Control */}
-      <div className="rounded-2xl glass p-5 space-y-4">
-        {/* Toggle Mode */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/50 pb-4">
-          <div className="flex items-center gap-2">
-            <div className="inline-flex rounded-xl bg-secondary/50 p-1 border border-border/50">
-              <button
-                type="button"
-                onClick={() => {
-                  setMode("paper");
-                  setError("");
-                }}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  mode === "paper"
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
+          recommendations ? (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={copyRecommendations}
+                disabled={!recommendations || loading}
+                className="h-8 text-xs gap-1.5 border-border/60 hover:bg-secondary/60"
               >
-                <FileText className="h-3.5 w-3.5" />
-                Uploaded Paper (PDF)
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMode("query");
-                  setError("");
-                }}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                  mode === "query"
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <Search className="h-3.5 w-3.5" />
-                Custom Research Query
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <ShieldCheck className="h-4 w-4 text-[var(--success)]" />
-            <span>High-similarity benchmark verification (&gt;90% match)</span>
-          </div>
-        </div>
-
-        {/* Dynamic Input Control */}
-        {mode === "paper" ? (
-          <div className="flex flex-col gap-3 md:flex-row md:items-center">
-            <select
-              value={selectedPaper}
-              onChange={(event) => {
-                setSelectedPaper(event.target.value);
-                setRecommendations("");
-                setError("");
-              }}
-              disabled={loadingPapers || loading}
-              className="min-h-10 flex-1 rounded-xl border border-border/60 bg-secondary/40 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
-            >
-              {loadingPapers && <option value="">Loading uploaded papers...</option>}
-              {!loadingPapers && papers.length === 0 && (
-                <option value="">No papers uploaded yet — switch to Custom Query</option>
-              )}
-              {papers.map((paper, index) => (
-                <option
-                  key={`${paper.filename}-${index}`}
-                  value={paper.filename}
-                >
-                  {paper.filename}
-                </option>
-              ))}
-            </select>
-
-            <Button
-              variant="hero"
-              onClick={handleRecommend}
-              disabled={loading || loadingPapers || !selectedPaper}
-              className="gap-2 min-w-[200px]"
-            >
-              <Sparkles className="h-4 w-4" />
-              {loading ? "Finding Benchmarks..." : "Recommend Datasets"}
-            </Button>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center">
-              <div className="relative flex-1">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <input
-                  type="text"
-                  placeholder="Enter research topic, architecture, or domain (e.g. Multimodal medical image segmentation)..."
-                  value={customQuery}
-                  onChange={(e) => setCustomQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleRecommend();
-                  }}
-                  disabled={loading}
-                  className="w-full min-h-10 rounded-xl border border-border/60 bg-secondary/40 pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
-                />
-              </div>
+                {copied ? (
+                  <>
+                    <Check className="h-3.5 w-3.5 text-emerald-400" />
+                    <span>Copied</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span>Copy Report</span>
+                  </>
+                )}
+              </Button>
 
               <Button
                 variant="hero"
-                onClick={handleRecommend}
-                disabled={loading || !customQuery.trim()}
-                className="gap-2 min-w-[200px]"
+                size="sm"
+                onClick={downloadRecommendations}
+                disabled={!recommendations || loading}
+                className="h-8 text-xs gap-1.5 shadow-sm"
               >
-                <Sparkles className="h-4 w-4" />
-                {loading ? "Searching Benchmarks..." : "Find Datasets"}
+                <Download className="h-3.5 w-3.5" />
+                <span>Export Report</span>
               </Button>
             </div>
+          ) : undefined
+        }
+      />
 
-            {/* Quick Preset Queries */}
-            <div className="flex flex-wrap items-center gap-1.5 pt-1">
-              <span className="text-xs text-muted-foreground mr-1">Try:</span>
-              {PRESET_QUERIES.map((preset, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => {
-                    setCustomQuery(preset);
-                  }}
-                  className="rounded-lg border border-border/40 bg-secondary/30 px-2.5 py-1 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
-                >
-                  {preset}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+      {/* Mode Switcher Banner */}
+      <div className="flex items-center justify-between flex-wrap gap-3 rounded-2xl border border-border/50 bg-secondary/20 p-2.5 backdrop-blur-md">
+        <div className="inline-flex rounded-xl bg-secondary/50 p-1 border border-border/40">
+          <button
+            type="button"
+            onClick={() => {
+              setMode("paper");
+              setError("");
+            }}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              mode === "paper"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <FileText className="h-3.5 w-3.5" />
+            <span>Target Paper (PDF)</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setMode("query");
+              setError("");
+            }}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              mode === "query"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Search className="h-3.5 w-3.5" />
+            <span>Custom Topic / Query</span>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2 text-xs text-muted-foreground pr-2">
+          <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0" />
+          <span className="hidden sm:inline">Authoritative peer-reviewed benchmark datasets</span>
+        </div>
       </div>
 
+      {/* Context Card: Paper Mode vs Query Mode */}
+      {mode === "paper" ? (
+        <PaperSelectorCard
+          papers={papers}
+          selectedPaper={selectedPaper}
+          onSelectPaper={(filename) => {
+            setSelectedPaper(filename);
+            setRecommendations("");
+            setError("");
+          }}
+          loading={loading}
+          loadingPapers={loadingPapers}
+          subtitle="Extracts modal constraints, evaluation metrics, and task schemas directly from this paper."
+          actionButton={
+            <Button
+              variant="hero"
+              size="sm"
+              onClick={handleRecommend}
+              disabled={loading || loadingPapers || !selectedPaper}
+              className="h-9 px-4 text-xs font-semibold gap-2 shadow-sm transition-all hover:scale-[1.02]"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              <span>{loading ? "Matching..." : "Recommend Datasets"}</span>
+            </Button>
+          }
+        />
+      ) : (
+        <div className="rounded-2xl border border-border/50 bg-gradient-to-r from-secondary/30 via-card/50 to-secondary/20 p-4 shadow-sm backdrop-blur-md space-y-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center">
+            <div className="relative flex-1">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <input
+                type="text"
+                placeholder="Enter research topic, architecture, or domain (e.g. Multimodal medical image segmentation)..."
+                value={customQuery}
+                onChange={(e) => setCustomQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleRecommend();
+                }}
+                disabled={loading}
+                className="w-full h-10 rounded-xl border border-border/60 bg-secondary/40 pl-10 pr-4 text-xs text-foreground placeholder:text-muted-foreground/60 outline-none focus:border-primary/50"
+              />
+            </div>
+
+            <Button
+              variant="hero"
+              size="sm"
+              onClick={handleRecommend}
+              disabled={loading || !customQuery.trim()}
+              className="h-10 px-4 text-xs font-semibold gap-2 shadow-sm shrink-0"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              <span>{loading ? "Searching..." : "Find Datasets"}</span>
+            </Button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+            <span className="text-[11px] text-muted-foreground mr-1">Suggested:</span>
+            {PRESET_QUERIES.map((preset, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => setCustomQuery(preset)}
+                className="rounded-lg border border-border/40 bg-secondary/30 px-2.5 py-1 text-[11px] text-muted-foreground hover:bg-secondary/70 hover:text-foreground transition-colors"
+              >
+                {preset}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {error && (
-        <div className="mt-4 rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive flex items-center gap-2">
-          <span>{error}</span>
-        </div>
+        <ErrorState
+          title="Dataset Recommendation Failed"
+          error={error}
+          onRetry={handleRecommend}
+        />
       )}
 
-      {!recommendations && !loading && !error && (
-        <div className="mt-6 grid gap-4 md:grid-cols-3">
-          <div className="rounded-2xl glass p-5">
-            <div className="grid h-10 w-10 place-items-center rounded-xl bg-primary/10 text-primary mb-3">
-              <Database className="h-5 w-5" />
-            </div>
-            <h3 className="font-semibold text-foreground">High-Similarity Datasets</h3>
-            <p className="mt-1.5 text-xs text-muted-foreground leading-relaxed">
-              Curated peer-reviewed benchmark datasets matching your exact domain, task modality, and schema with &gt;90% accuracy.
-            </p>
-          </div>
-
-          <div className="rounded-2xl glass p-5">
-            <div className="grid h-10 w-10 place-items-center rounded-xl bg-purple-500/10 text-purple-400 mb-3">
-              <Sparkles className="h-5 w-5" />
-            </div>
-            <h3 className="font-semibold text-foreground">Detailed Selection Rationale</h3>
-            <p className="mt-1.5 text-xs text-muted-foreground leading-relaxed">
-              Every recommended dataset includes deep technical reasons explaining why it was chosen, baseline utility, and ground-truth quality.
-            </p>
-          </div>
-
-          <div className="rounded-2xl glass p-5">
-            <div className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-500/10 text-emerald-400 mb-3">
-              <Layers className="h-5 w-5" />
-            </div>
-            <h3 className="font-semibold text-foreground">Standardized Benchmark Matrix</h3>
-            <p className="mt-1.5 text-xs text-muted-foreground leading-relaxed">
-              Standardized comparison table with license integrity, evaluation metrics, and direct Python/HuggingFace loading snippets.
-            </p>
-          </div>
-        </div>
-      )}
-
+      {/* Reusable Multi-Stage Processing Experience */}
       {loading && (
-        <div className="mt-6 rounded-2xl glass p-10 text-center">
-          <Sparkles className="mx-auto h-10 w-10 animate-pulse text-primary" />
-          <h3 className="mt-4 font-semibold text-foreground">ResearchX Dataset Specialist is Working</h3>
-          <p className="mt-2 text-sm text-muted-foreground max-w-md mx-auto">
-            Analyzing domain constraints, filtering high-similarity benchmark datasets, and synthesizing technical selection justifications...
-          </p>
+        <AIProcessingCard
+          agentName="DATASET SPECIALIST"
+          title={
+            mode === "paper"
+              ? `Finding high-similarity benchmarks for ${selectedPaper}`
+              : `Matching benchmark datasets for "${customQuery}"`
+          }
+          stages={DATASET_STAGES}
+          className="mt-6"
+        />
+      )}
+
+      {/* Empty State before Running */}
+      {!loading && !recommendations && !error && (
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
+          <div className="rounded-2xl border border-border/40 bg-secondary/20 p-5 backdrop-blur-sm">
+            <div className="grid h-9 w-9 place-items-center rounded-xl bg-primary/10 border border-primary/20 text-primary mb-3">
+              <Database className="h-4 w-4" />
+            </div>
+            <h4 className="text-sm font-semibold text-foreground">High-Similarity Benchmarks</h4>
+            <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+              Curated peer-reviewed datasets matching your research formulation, domain constraints, and input modality.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-border/40 bg-secondary/20 p-5 backdrop-blur-sm">
+            <div className="grid h-9 w-9 place-items-center rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400 mb-3">
+              <Sparkles className="h-4 w-4" />
+            </div>
+            <h4 className="text-sm font-semibold text-foreground">Selection Rationale</h4>
+            <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+              Every dataset includes technical justifications explaining why it serves as the authoritative baseline for your paper.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-border/40 bg-secondary/20 p-5 backdrop-blur-sm">
+            <div className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 mb-3">
+              <Layers className="h-4 w-4" />
+            </div>
+            <h4 className="text-sm font-semibold text-foreground">Standardized Benchmark Matrix</h4>
+            <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+              Standardized comparison tables with licensing integrity, split counts, and direct loading snippets.
+            </p>
+          </div>
         </div>
       )}
 
+      {/* Dataset Results Layout */}
       {recommendations && !loading && (
-        <div className="mt-6 rounded-2xl glass p-7">
-          <div className="flex items-center justify-between border-b border-border/50 pb-4">
-            <div className="flex items-center gap-3">
-              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl gradient-primary-bg">
-                <Database className="h-5 w-5 text-primary-foreground" />
-              </div>
-              <div className="min-w-0">
-                <h3 className="text-base font-semibold text-foreground">
-                  Dataset Recommendation &amp; Benchmark Report
-                </h3>
-                <p className="truncate text-xs text-muted-foreground">
-                  {mode === "paper" ? `Target Paper: ${selectedPaper}` : `Query: ${customQuery}`}
-                </p>
-              </div>
-            </div>
+        <div className="grid gap-6 lg:grid-cols-12 items-start">
+          <div className="lg:col-span-8 space-y-4">
+            <div className="rounded-2xl border border-border/50 bg-card/80 p-6 sm:p-8 backdrop-blur-xl shadow-xl">
+              <div className="flex items-center justify-between border-b border-border/40 pb-4 mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl gradient-primary-bg shadow-sm">
+                    <Database className="h-5 w-5 text-primary-foreground" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-semibold text-foreground">
+                      Authoritative Benchmark Recommendations
+                    </h3>
+                    <p className="text-xs text-muted-foreground truncate max-w-md">
+                      {mode === "paper" ? selectedPaper : customQuery}
+                    </p>
+                  </div>
+                </div>
 
-            <div className="flex items-center gap-2">
-              <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-400 border border-emerald-500/20">
-                <ShieldCheck className="h-3 w-3" />
-                Verified Benchmarks
-              </span>
+                <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-3 py-1 text-[11px] font-semibold text-emerald-400 border border-emerald-500/25">
+                  <ShieldCheck className="h-3 w-3" />
+                  Gold Standards
+                </span>
+              </div>
+
+              {/* Formatted Markdown Content */}
+              <div className="text-sm leading-relaxed text-foreground/90 space-y-4">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    h1: ({ node, ...props }) => (
+                      <h1
+                        className="text-xl font-bold tracking-tight text-foreground border-b border-border/40 pb-2 mt-6 mb-3"
+                        {...props}
+                      />
+                    ),
+                    h2: ({ node, ...props }) => (
+                      <h2
+                        className="text-lg font-bold tracking-tight text-foreground border-b border-border/30 pb-1.5 mt-6 mb-2"
+                        {...props}
+                      />
+                    ),
+                    h3: ({ node, ...props }) => (
+                      <h3
+                        className="text-sm font-bold text-primary mt-5 mb-1.5 flex items-center gap-2"
+                        {...props}
+                      />
+                    ),
+                    h4: ({ node, ...props }) => (
+                      <h4
+                        className="text-xs font-semibold text-foreground/90 uppercase tracking-wide mt-3 mb-1"
+                        {...props}
+                      />
+                    ),
+                    ul: ({ node, ...props }) => (
+                      <ul
+                        className="list-disc pl-5 space-y-1.5 text-xs text-foreground/80 my-2"
+                        {...props}
+                      />
+                    ),
+                    ol: ({ node, ...props }) => (
+                      <ol
+                        className="list-decimal pl-5 space-y-1.5 text-xs text-foreground/80 my-2"
+                        {...props}
+                      />
+                    ),
+                    li: ({ node, ...props }) => (
+                      <li className="leading-relaxed" {...props} />
+                    ),
+                    blockquote: ({ node, ...props }) => (
+                      <blockquote
+                        className="border-l-2 border-primary/60 bg-secondary/30 py-2 px-3 rounded-r-xl text-xs italic text-muted-foreground my-3"
+                        {...props}
+                      />
+                    ),
+                    table: ({ node, ...props }) => (
+                      <div className="overflow-x-auto my-4 rounded-xl border border-border/50">
+                        <table
+                          className="w-full text-xs text-left border-collapse"
+                          {...props}
+                        />
+                      </div>
+                    ),
+                    th: ({ node, ...props }) => (
+                      <th
+                        className="border-b border-border/60 bg-secondary/60 px-3 py-2 text-xs font-semibold text-primary"
+                        {...props}
+                      />
+                    ),
+                    td: ({ node, children, ...props }) => {
+                      const text = String(children);
+                      const isHighMatch = /(\d{2,3})%/.test(text);
+
+                      return (
+                        <td
+                          className="border-b border-border/30 px-3 py-2 text-xs text-foreground/80"
+                          {...props}
+                        >
+                          {isHighMatch ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-mono font-semibold text-[11px] border border-emerald-500/25">
+                              {children}
+                            </span>
+                          ) : (
+                            children
+                          )}
+                        </td>
+                      );
+                    },
+                  }}
+                >
+                  {recommendations}
+                </ReactMarkdown>
+              </div>
             </div>
           </div>
 
-          {/* Standardized Markdown Content Rendering */}
-          <div
-            className="mt-6 text-sm text-foreground/90 leading-relaxed
-            [&_h3]:text-base [&_h3]:font-bold [&_h3]:text-foreground [&_h3]:mt-6 [&_h3]:mb-3 [&_h3]:flex [&_h3]:items-center [&_h3]:gap-2
-            [&_h4]:text-sm [&_h4]:font-semibold [&_h4]:text-foreground [&_h4]:mt-4 [&_h4]:mb-2
-            [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-3 [&_ul]:space-y-1.5
-            [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-3 [&_ol]:space-y-1.5
-            [&_li]:leading-relaxed
-            [&_strong]:text-foreground [&_strong]:font-semibold
-            [&_hr]:my-6 [&_hr]:border-border/50
-            [&_pre]:my-3 [&_pre]:p-3.5 [&_pre]:rounded-xl [&_pre]:bg-secondary/60 [&_pre]:border [&_pre]:border-border/60 [&_pre]:overflow-x-auto [&_pre]:text-xs
-            [&_code]:rounded [&_code]:bg-secondary/80 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-xs [&_code]:font-mono
-            [&_table]:w-full [&_table]:my-6 [&_table]:border-collapse [&_table]:rounded-xl [&_table]:border [&_table]:border-border/60 [&_table]:overflow-hidden
-            [&_thead]:bg-secondary/70
-            [&_th]:border [&_th]:border-border/60 [&_th]:p-3 [&_th]:text-left [&_th]:font-semibold [&_th]:text-xs [&_th]:text-foreground
-            [&_td]:border [&_td]:border-border/40 [&_td]:p-3 [&_td]:text-xs [&_td]:leading-relaxed
-            [&_p]:leading-relaxed [&_p]:mb-3"
-          >
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {recommendations}
-            </ReactMarkdown>
+          {/* Right Sidebar: Dataset Context & Next Actions */}
+          <div className="lg:col-span-4 space-y-4">
+            <div className="rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/10 via-card/80 to-background p-5 backdrop-blur-md shadow-sm space-y-3">
+              <div className="flex items-center gap-2">
+                <div className="grid h-7 w-7 place-items-center rounded-lg bg-primary/20 text-primary">
+                  <Database className="h-4 w-4" />
+                </div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-primary">
+                  Benchmark Quality Check
+                </h4>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                All matched benchmarks meet standard scholarly evaluation criteria:
+              </p>
+              <ul className="space-y-1.5 text-xs text-foreground/90">
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                  <span>Publicly reproducible ground-truth test splits</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                  <span>Documented licensing (CC-BY, MIT, Academic)</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0 mt-0.5" />
+                  <span>Established SOTA baselines for comparison</span>
+                </li>
+              </ul>
+            </div>
+
+            <div className="rounded-2xl border border-border/50 bg-secondary/20 p-5 backdrop-blur-md shadow-sm space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Next Research Steps
+              </h4>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Wire these benchmark datasets into your experimental protocol:
+              </p>
+
+              <div className="space-y-2 pt-1">
+                <Link
+                  to="/dashboard/experiments"
+                  search={{ paper: selectedPaper }}
+                  className="block"
+                >
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-between h-8 text-xs border-border/50 hover:border-primary/40 font-medium"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <FlaskConical className="h-3.5 w-3.5 text-purple-400" />
+                      Design Experiments
+                    </span>
+                    <ArrowRight className="h-3 w-3 opacity-50" />
+                  </Button>
+                </Link>
+
+                <Link
+                  to="/dashboard/report"
+                  search={{ paper: selectedPaper }}
+                  className="block"
+                >
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-between h-8 text-xs border-border/50 hover:border-primary/40 font-medium"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <FileSpreadsheet className="h-3.5 w-3.5 text-blue-400" />
+                      Draft IEEE Report
+                    </span>
+                    <ArrowRight className="h-3 w-3 opacity-50" />
+                  </Button>
+                </Link>
+              </div>
+            </div>
           </div>
         </div>
       )}
     </div>
   );
 }
+
+export default DatasetsPage;

@@ -1,5 +1,5 @@
-import { createFileRoute, useSearch } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -11,7 +11,21 @@ import {
   Search,
   RotateCcw,
   ArrowRight,
-  FileCheck2,
+  ShieldCheck,
+  Upload,
+  ChevronDown,
+  Layers,
+  CheckCircle2,
+  AlertCircle,
+  ExternalLink,
+  FlaskConical,
+  BookOpen,
+  Lightbulb,
+  FileSpreadsheet,
+  Clock,
+  Compass,
+  FileCode,
+  MessageSquare,
 } from "lucide-react";
 
 import { PageHeader } from "@/components/dashboard/topbar";
@@ -22,16 +36,14 @@ export const Route = createFileRoute("/dashboard/summary")({
   validateSearch: (search: Record<string, unknown>) => ({
     paper: typeof search.paper === "string" ? search.paper : "",
   }),
-
   head: () => ({
     meta: [
       {
-        title: "Research Summary — ResearchX",
+        title: "Research Summary Command Center — ResearchX",
       },
     ],
   }),
-
-  component: SummaryPage,
+  component: SummaryCommandCenterPage,
 });
 
 type Paper = {
@@ -43,14 +55,54 @@ type Paper = {
 const SUGGESTED_QUERIES = [
   "Full Executive Summary",
   "Methodology & Architecture",
-  "Core Contributions & Innovations",
-  "Experimental Benchmarks & Results",
+  "Key Findings & Baselines",
+  "Plagiarism & Originality Audit",
 ];
 
-function SummaryPage() {
-  const search = useSearch({
-    from: "/dashboard/summary",
-  });
+// Helper to safely extract markdown text from any response structure
+function extractTextContent(resultData: any): string {
+  if (!resultData) return "";
+  if (typeof resultData === "string") return resultData;
+  if (Array.isArray(resultData)) {
+    return resultData
+      .map((item) => {
+        if (typeof item === "string") return item;
+        const pName = item?.paper_name;
+        const res = item?.result || item?.output || "";
+        return pName ? `### ${pName}\n\n${res}` : res;
+      })
+      .join("\n\n---\n\n");
+  }
+  if (typeof resultData === "object") {
+    if (resultData.output && typeof resultData.output === "string") return resultData.output;
+    if (resultData.result && typeof resultData.result === "string") return resultData.result;
+    if (resultData.summary && typeof resultData.summary === "string") return resultData.summary;
+    if (resultData.data && typeof resultData.data === "string") return resultData.data;
+    if (resultData.results && typeof resultData.results === "object") {
+      const first = resultData.results.summary || Object.values(resultData.results)[0];
+      if (typeof first === "string") return first;
+      if (first && typeof first === "object") return first.output || first.result || "";
+    }
+    return JSON.stringify(resultData, null, 2);
+  }
+  return String(resultData);
+}
+
+// Normalize markdown spacing and line endings
+function normalizeMarkdown(content: string): string {
+  if (!content) return "";
+  let text = content
+    .replace(/\0/g, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\ufffd/g, "—");
+
+  text = text.replace(/([^\n])\n(#{1,6}\s+[^\n]+)/g, "$1\n\n$2");
+  text = text.replace(/([^\n\-\*\d])\n([*-]\s+)/g, "$1\n\n$2");
+  return text.trim();
+}
+
+function SummaryCommandCenterPage() {
+  const search = useSearch({ from: "/dashboard/summary" });
 
   const [papers, setPapers] = useState<Paper[]>([]);
   const [selectedPaper, setSelectedPaper] = useState("");
@@ -61,6 +113,21 @@ function SummaryPage() {
   const [loadingPapers, setLoadingPapers] = useState(true);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
+  const [showPaperSelector, setShowPaperSelector] = useState(false);
+  const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
+
+  const exportRef = useRef<HTMLDivElement>(null);
+
+  // Close export dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (exportRef.current && !exportRef.current.contains(event.target as Node)) {
+        setExportDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // ==========================
   // Load Uploaded Papers
@@ -73,7 +140,6 @@ function SummaryPage() {
 
         const response = await getPapers();
         const uploadedPapers: Paper[] = response?.data?.papers || [];
-
         setPapers(uploadedPapers);
 
         if (search.paper) {
@@ -86,7 +152,7 @@ function SummaryPage() {
         }
       } catch (err) {
         setError(
-          err instanceof Error ? err.message : "Failed to load uploaded papers"
+          err instanceof Error ? err.message : "Failed to load uploaded research papers"
         );
       } finally {
         setLoadingPapers(false);
@@ -97,15 +163,15 @@ function SummaryPage() {
   }, [search.paper]);
 
   // ==========================
-  // Generate Summary Action
+  // Execute Summary Agent
   // ==========================
   const handleGenerateSummary = async (customQuery?: string) => {
-    const queryToExecute = (customQuery !== undefined ? customQuery : query).trim();
-
     if (!selectedPaper) {
-      setError("Please select an uploaded research paper.");
+      setError("Please select an uploaded research paper first.");
       return;
     }
+
+    const queryToExecute = typeof customQuery === "string" ? customQuery : query;
 
     try {
       setLoading(true);
@@ -118,16 +184,19 @@ function SummaryPage() {
         queryToExecute || "summary"
       );
 
-      const resultText = response?.result || (response as any)?.data || "";
+      const raw = response?.result ?? (response as any)?.data ?? (response as any)?.results ?? "";
+      const resultText = extractTextContent(raw);
 
       if (!resultText) {
-        throw new Error("No summary generated. Please verify the paper content.");
+        throw new Error("Unable to generate the summary. The research paper could not be processed.");
       }
 
       setSummary(resultText);
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Failed to generate summary"
+        err instanceof Error
+          ? err.message
+          : "Unable to generate the summary. The research paper could not be processed."
       );
     } finally {
       setLoading(false);
@@ -135,11 +204,10 @@ function SummaryPage() {
   };
 
   // ==========================
-  // Copy Summary
+  // Clipboard Copy
   // ==========================
   const copySummary = async () => {
     if (!summary) return;
-
     try {
       await navigator.clipboard.writeText(summary);
       setCopied(true);
@@ -150,25 +218,34 @@ function SummaryPage() {
   };
 
   // ==========================
-  // Download Summary
+  // Client-Side Downloads
   // ==========================
-  const downloadSummary = () => {
+  const exportAsFile = (extension: "md" | "txt") => {
     if (!summary) return;
 
-    const content = [
-      `# ResearchX AI Summary: ${selectedPaper}`,
-      activeQuery ? `Query: ${activeQuery}` : "Analysis: Executive Summary",
-      `Generated: ${new Date().toLocaleString()}`,
-      "",
-      "---",
-      "",
-      summary,
-    ].join("\n");
+    const content =
+      extension === "md"
+        ? [
+            `# ResearchX AI Summary: ${selectedPaper}`,
+            activeQuery ? `**Research Query:** ${activeQuery}` : "**Analysis:** Executive Research Summary",
+            `**Generated:** ${new Date().toLocaleString()}`,
+            "",
+            "---",
+            "",
+            summary,
+          ].join("\n\n")
+        : [
+            `ResearchX AI Summary: ${selectedPaper}`,
+            activeQuery ? `Research Query: ${activeQuery}` : "Analysis: Executive Research Summary",
+            `Generated: ${new Date().toLocaleString()}`,
+            "",
+            "=".repeat(60),
+            "",
+            summary.replace(/#{1,6}\s*/g, "").replace(/\*\*/g, ""),
+          ].join("\n\n");
 
-    const blob = new Blob([content], {
-      type: "text/markdown;charset=utf-8",
-    });
-
+    const mimeType = extension === "md" ? "text/markdown;charset=utf-8" : "text/plain;charset=utf-8";
+    const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     const safeFilename = selectedPaper
@@ -176,24 +253,37 @@ function SummaryPage() {
       .replace(/[^a-zA-Z0-9-_]/g, "_");
 
     anchor.href = url;
-    anchor.download = `${safeFilename}-summary.md`;
+    anchor.download = `${safeFilename}-research-summary.${extension}`;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
     URL.revokeObjectURL(url);
+    setExportDropdownOpen(false);
   };
 
+  const selectedPaperObj = papers.find((p) => p.filename === selectedPaper);
+
   return (
-    <div className="min-w-0 space-y-6 pb-12">
+    <div className="min-w-0 space-y-6 pb-16">
+      {/* ==========================
+          Header Bar
+      ========================== */}
       <PageHeader
-        title="Research Summary Agent"
-        subtitle={
-          selectedPaper
-            ? `Run query-grounded synthesis on '${selectedPaper}'.`
-            : "Select an uploaded research paper to generate grounded AI summaries."
-        }
+        title="Research Summary"
+        subtitle="Generate an AI-powered summary of your selected research paper."
         action={
           <div className="flex flex-wrap items-center gap-2">
+            <Link to="/dashboard/upload">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 gap-1.5 border-border/50 bg-secondary/30 text-xs font-medium hover:bg-secondary/60"
+              >
+                <Upload className="h-3.5 w-3.5 text-primary" />
+                Upload PDF
+              </Button>
+            </Link>
+
             {summary && (
               <>
                 <Button
@@ -202,32 +292,56 @@ function SummaryPage() {
                   size="sm"
                   onClick={copySummary}
                   disabled={loading}
-                  className="h-9 gap-1.5 border-border/60"
+                  className="h-9 gap-1.5 border-border/60 text-xs font-medium"
                 >
                   {copied ? (
                     <>
-                      <Check className="h-4 w-4 text-emerald-400" />
+                      <Check className="h-3.5 w-3.5 text-emerald-400" />
                       Copied!
                     </>
                   ) : (
                     <>
-                      <Copy className="h-4 w-4" />
-                      Copy Output
+                      <Copy className="h-3.5 w-3.5" />
+                      Copy Summary
                     </>
                   )}
                 </Button>
 
-                <Button
-                  type="button"
-                  variant="hero"
-                  size="sm"
-                  onClick={downloadSummary}
-                  disabled={loading}
-                  className="h-9 gap-1.5"
-                >
-                  <Download className="h-4 w-4" />
-                  Export Markdown
-                </Button>
+                <div className="relative" ref={exportRef}>
+                  <Button
+                    type="button"
+                    variant="hero"
+                    size="sm"
+                    onClick={() => setExportDropdownOpen((prev) => !prev)}
+                    disabled={loading}
+                    className="h-9 gap-1.5 text-xs font-medium cursor-pointer"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Export
+                    <ChevronDown className="h-3 w-3 opacity-70" />
+                  </Button>
+
+                  {exportDropdownOpen && (
+                    <div className="absolute right-0 top-full mt-1.5 w-44 rounded-xl border border-border/60 bg-card p-1.5 shadow-xl z-50 backdrop-blur-xl animate-in fade-in-50 zoom-in-95">
+                      <button
+                        type="button"
+                        onClick={() => exportAsFile("md")}
+                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-foreground hover:bg-secondary/60 transition-colors"
+                      >
+                        <FileCode className="h-3.5 w-3.5 text-primary" />
+                        Export Markdown (.md)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => exportAsFile("txt")}
+                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-foreground hover:bg-secondary/60 transition-colors"
+                      >
+                        <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                        Export Text (.txt)
+                      </button>
+                    </div>
+                  )}
+                </div>
               </>
             )}
           </div>
@@ -235,79 +349,146 @@ function SummaryPage() {
       />
 
       {/* ==========================
-          Paper & Query Control Card
+          Paper Selector Card
       ========================== */}
-      <div className="rounded-2xl glass p-6 space-y-5 border border-border/40 shadow-sm">
-        {/* Paper Selector Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-border/40">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl gradient-primary-bg text-primary-foreground shadow-sm">
-              <FileCheck2 className="h-4 w-4" />
+      <div className="rounded-2xl bg-secondary/20 border border-border/40 p-5 sm:p-6 shadow-sm backdrop-blur-sm space-y-4">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl gradient-primary-bg shadow-sm">
+              <FileText className="h-6 w-6 text-primary-foreground" />
             </div>
-            <div>
-              <h3 className="font-semibold text-sm">Target Research Paper</h3>
-              <p className="text-xs text-muted-foreground">
-                Select the specific uploaded PDF for analysis
-              </p>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-primary">
+                  Selected Research Paper
+                </span>
+                {selectedPaper && (
+                  <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">
+                    <CheckCircle2 className="h-2.5 w-2.5" /> Ready
+                  </span>
+                )}
+              </div>
+              <h2 className="text-base sm:text-lg font-semibold truncate text-foreground font-display">
+                {selectedPaper || "No research paper selected"}
+              </h2>
+              {selectedPaperObj?.uploaded_at && (
+                <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                  <Clock className="h-3 w-3" />
+                  Uploaded: {selectedPaperObj.uploaded_at}
+                </p>
+              )}
             </div>
           </div>
 
-          <div className="min-w-[280px] max-w-full sm:max-w-md">
-            <select
-              value={selectedPaper}
-              onChange={(e) => {
-                setSelectedPaper(e.target.value);
-                setSummary("");
-                setError("");
-              }}
-              disabled={loadingPapers || loading}
-              className="min-h-10 w-full rounded-xl border border-border/60 bg-secondary/50 px-3.5 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/40"
-            >
-              {loadingPapers && <option value="">Loading uploaded papers...</option>}
-              {!loadingPapers && papers.length === 0 && (
-                <option value="">No papers uploaded yet</option>
+          <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-center">
+            {/* Paper Switcher Drawer/Dropdown Trigger */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowPaperSelector((prev) => !prev)}
+                disabled={loadingPapers || papers.length === 0}
+                className="flex items-center gap-2 rounded-xl border border-border/60 bg-secondary/40 hover:bg-secondary/70 px-3.5 py-2 text-xs font-medium text-foreground transition-all cursor-pointer"
+              >
+                <span>Select another paper</span>
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              </button>
+
+              {/* Selector Popover */}
+              {showPaperSelector && (
+                <div className="absolute right-0 top-full mt-2 w-80 max-h-72 overflow-y-auto rounded-2xl border border-border/60 bg-card p-2 shadow-2xl z-50 backdrop-blur-xl scrollbar-thin">
+                  <div className="px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground/70 border-b border-border/30 mb-1">
+                    Uploaded Research Papers ({papers.length})
+                  </div>
+                  {papers.map((p) => (
+                    <button
+                      key={p.filename}
+                      type="button"
+                      onClick={() => {
+                        setSelectedPaper(p.filename);
+                        setShowPaperSelector(false);
+                        setSummary("");
+                        setError("");
+                      }}
+                      className={`flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-xs transition-colors ${
+                        selectedPaper === p.filename
+                          ? "bg-primary/20 text-primary border border-primary/30 font-medium"
+                          : "text-foreground hover:bg-secondary/50"
+                      }`}
+                    >
+                      <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate flex-1">{p.filename}</span>
+                      {selectedPaper === p.filename && (
+                        <Check className="h-3.5 w-3.5 text-primary shrink-0" />
+                      )}
+                    </button>
+                  ))}
+                  <div className="pt-2 mt-1 border-t border-border/30">
+                    <Link
+                      to="/dashboard/upload"
+                      className="flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs text-primary font-medium hover:underline"
+                    >
+                      <Upload className="h-3 w-3" /> Upload new research PDF
+                    </Link>
+                  </div>
+                </div>
               )}
-              {papers.map((paper, index) => (
-                <option key={`${paper.filename}-${index}`} value={paper.filename}>
-                  📄 {paper.filename}
-                </option>
-              ))}
-            </select>
+            </div>
+
+            {/* Primary Action Button */}
+            <Button
+              type="button"
+              variant="hero"
+              onClick={() => handleGenerateSummary()}
+              disabled={loading || loadingPapers || !selectedPaper}
+              className="min-w-[170px] h-9 gap-2 shadow-sm font-medium text-xs cursor-pointer"
+            >
+              {loading ? (
+                <>
+                  <RotateCcw className="h-3.5 w-3.5 animate-spin" />
+                  Analyzing Paper...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-3.5 w-3.5" />
+                  {summary ? "Rerun Summary" : "Generate Summary"}
+                </>
+              )}
+            </Button>
           </div>
         </div>
 
-        {/* Query Input Area (Works just like AI Workspace) */}
-        <div className="space-y-3">
+        {/* Optional Research Focus & Quick Suggestions */}
+        <div className="pt-3 border-t border-border/30 space-y-2.5">
           <div className="flex items-center justify-between">
-            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-              <Search className="h-3.5 w-3.5 text-primary" />
-              Research Query / Focus (Optional)
+            <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80 flex items-center gap-1.5">
+              <Search className="h-3 w-3 text-primary" />
+              Research Focus / Inquiry (Optional)
             </label>
-            <span className="text-[11px] text-muted-foreground">
-              Leave blank for a full executive summary
+            <span className="text-[10px] text-muted-foreground/60">
+              Press Enter or click quick focus to run
             </span>
           </div>
 
-          <div className="relative">
+          <div className="flex gap-2">
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !loading) {
+                if (e.key === "Enter" && !loading && selectedPaper) {
                   e.preventDefault();
                   handleGenerateSummary();
                 }
               }}
-              placeholder="e.g. Summarize the core methodology, architecture, and empirical benchmarks..."
+              placeholder="e.g. Focus on proposed framework, quantitative benchmarks, and plagiarism check..."
               disabled={loading || !selectedPaper}
-              className="w-full rounded-xl border border-border/60 bg-secondary/30 px-4 py-3 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+              className="flex-1 rounded-xl border border-border/60 bg-secondary/30 px-3.5 py-2 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary transition-all"
             />
           </div>
 
-          {/* Quick Suggestion Chips */}
-          <div className="flex flex-wrap items-center gap-2 pt-1">
-            <span className="text-xs text-muted-foreground font-medium">Quick Prompts:</span>
+          {/* Quick Prompts */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+            <span className="text-[11px] text-muted-foreground mr-1">Focus Mode:</span>
             {SUGGESTED_QUERIES.map((chip) => (
               <button
                 key={chip}
@@ -317,193 +498,551 @@ function SummaryPage() {
                   handleGenerateSummary(chip);
                 }}
                 disabled={loading || !selectedPaper}
-                className="text-xs px-3 py-1 rounded-full border border-border/50 bg-secondary/30 hover:bg-secondary/70 hover:border-primary/40 text-foreground transition-all flex items-center gap-1 cursor-pointer"
+                className={`text-[11px] px-2.5 py-1 rounded-lg border transition-all flex items-center gap-1 cursor-pointer ${
+                  query === chip
+                    ? "bg-primary/20 border-primary text-primary font-medium"
+                    : "bg-secondary/40 border-border/40 text-muted-foreground hover:text-foreground hover:bg-secondary/70"
+                }`}
               >
                 <span>{chip}</span>
-                <ArrowRight className="h-2.5 w-2.5 opacity-60" />
+                <ArrowRight className="h-2 w-2 opacity-50" />
               </button>
             ))}
           </div>
-        </div>
-
-        {/* Action Button */}
-        <div className="flex items-center justify-end pt-2">
-          <Button
-            type="button"
-            variant="hero"
-            onClick={() => handleGenerateSummary()}
-            disabled={loading || loadingPapers || !selectedPaper}
-            className="min-w-[180px] gap-2 shadow-sm font-medium"
-          >
-            {loading ? (
-              <>
-                <RotateCcw className="h-4 w-4 animate-spin" />
-                Analyzing Paper...
-              </>
-            ) : (
-              <>
-                <Sparkles className="h-4 w-4" />
-                Run Summary Agent
-              </>
-            )}
-          </Button>
         </div>
       </div>
 
       {/* ==========================
           Error State
       ========================== */}
-      {error && (
-        <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive flex items-center gap-3">
-          <div className="h-2 w-2 rounded-full bg-destructive" />
-          <span>{error}</span>
+      {error && !loading && (
+        <div className="rounded-2xl border border-destructive/40 bg-destructive/10 p-5 text-sm text-destructive flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="h-5 w-5 shrink-0" />
+            <div>
+              <p className="font-semibold text-sm">Unable to generate the summary.</p>
+              <p className="text-xs text-destructive/80 mt-0.5">{error}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleGenerateSummary()}
+              className="h-8 text-xs border-destructive/40 hover:bg-destructive/20"
+            >
+              <RotateCcw className="h-3 w-3 mr-1" />
+              Retry Analysis
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowPaperSelector(true)}
+              className="h-8 text-xs border-destructive/40 hover:bg-destructive/20"
+            >
+              Select Another Paper
+            </Button>
+          </div>
         </div>
       )}
 
       {/* ==========================
-          Loading State
+          Analysis / Loading State
       ========================== */}
       {loading && (
-        <div className="rounded-2xl glass p-12 text-center space-y-4 border border-border/40">
-          <div className="grid h-12 w-12 place-items-center rounded-2xl gradient-primary-bg glow-primary mx-auto">
-            <Sparkles className="h-6 w-6 text-primary-foreground animate-pulse" />
+        <div className="rounded-2xl bg-secondary/15 border border-border/40 p-8 sm:p-10 text-center space-y-6 backdrop-blur-sm">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 border border-primary/20 text-primary">
+            <RotateCcw className="h-8 w-8 animate-spin text-primary" />
           </div>
-          <div className="space-y-1">
-            <h3 className="font-semibold text-base">Grounding Summary Agent on Uploaded PDF</h3>
-            <p className="text-sm text-muted-foreground max-w-md mx-auto">
-              Extracting document sections, retrieving RAG evidence, and synthesizing scholarly analysis for{" "}
-              <span className="font-medium text-foreground">{selectedPaper}</span>...
+
+          <div className="space-y-1.5 max-w-md mx-auto">
+            <div className="inline-flex items-center gap-1.5 rounded-md bg-primary/15 border border-primary/30 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
+              AI Summary Engine Active
+            </div>
+            <h3 className="text-lg font-semibold font-display">
+              Analyzing Research Paper
+            </h3>
+            <p className="text-xs text-muted-foreground font-mono truncate">
+              {selectedPaper}
             </p>
           </div>
-        </div>
-      )}
 
-      {/* ==========================
-          Empty State
-      ========================== */}
-      {!summary && !loading && !error && (
-        <div className="rounded-2xl glass p-12 text-center space-y-3 border border-border/30">
-          <div className="grid h-12 w-12 place-items-center rounded-2xl bg-secondary/50 text-primary mx-auto">
-            <FileText className="h-6 w-6" />
+          {/* Realistic Active Analysis Steps */}
+          <div className="max-w-lg mx-auto grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-left pt-2">
+            <div className="rounded-xl border border-border/40 bg-secondary/30 p-3 flex items-center gap-2.5">
+              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+              <div className="min-w-0 text-xs">
+                <span className="font-semibold text-foreground">Document Loaded</span>
+                <p className="text-[10px] text-muted-foreground truncate">PDF text context verified</p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border/40 bg-secondary/30 p-3 flex items-center gap-2.5">
+              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+              <div className="min-w-0 text-xs">
+                <span className="font-semibold text-foreground">Content Identified</span>
+                <p className="text-[10px] text-muted-foreground truncate">Methodology & findings</p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-primary/30 bg-primary/5 p-3 flex items-center gap-2.5">
+              <RotateCcw className="h-4 w-4 text-primary animate-spin shrink-0" />
+              <div className="min-w-0 text-xs">
+                <span className="font-semibold text-primary">Generating Summary</span>
+                <p className="text-[10px] text-muted-foreground truncate">Scholarly synthesis running</p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border/30 bg-secondary/20 p-3 flex items-center gap-2.5 opacity-60">
+              <div className="h-4 w-4 rounded-full border border-muted-foreground/40 shrink-0" />
+              <div className="min-w-0 text-xs">
+                <span className="font-medium text-muted-foreground">Structuring Output</span>
+                <p className="text-[10px] text-muted-foreground truncate">Executive sections</p>
+              </div>
+            </div>
           </div>
-          <h3 className="font-semibold text-base">Ready to Analyze</h3>
-          <p className="text-sm text-muted-foreground max-w-md mx-auto">
-            Select an uploaded research paper above, specify your query or prompt, and click{" "}
-            <span className="font-medium text-foreground">Run Summary Agent</span> to generate a grounded analysis.
-          </p>
+
+          {/* Skeleton Shimmering Bars */}
+          <div className="max-w-md mx-auto space-y-2 pt-2 opacity-50 animate-pulse">
+            <div className="h-2 rounded bg-secondary/70 w-full" />
+            <div className="h-2 rounded bg-secondary/60 w-5/6 mx-auto" />
+            <div className="h-2 rounded bg-secondary/50 w-2/3 mx-auto" />
+          </div>
         </div>
       )}
 
       {/* ==========================
-          Summary Result Card
+          Empty State (No Paper Uploaded)
+      ========================== */}
+      {!selectedPaper && !loading && !loadingPapers && (
+        <div className="rounded-2xl border border-dashed border-border/60 bg-secondary/10 p-12 text-center space-y-4">
+          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-secondary/40 text-muted-foreground">
+            <FileText className="h-7 w-7" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-semibold font-display">No research paper selected</h3>
+            <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+              Upload or select a research paper to generate an AI-powered research summary.
+            </p>
+          </div>
+          <div className="flex items-center justify-center gap-3 pt-2">
+            <Link to="/dashboard/upload">
+              <Button variant="hero" size="sm" className="gap-1.5 text-xs">
+                <Upload className="h-3.5 w-3.5" />
+                Upload Research Paper
+              </Button>
+            </Link>
+            <Link to="/dashboard/papers">
+              <Button variant="outline" size="sm" className="gap-1.5 text-xs border-border/50">
+                <Search className="h-3.5 w-3.5" />
+                Select from Library
+              </Button>
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* ==========================
+          Two-Column Research Command Center Layout
       ========================== */}
       {summary && !loading && (
-        <div className="rounded-2xl glass p-6 space-y-5 border border-border/40 shadow-sm">
-          {/* Card Top Info */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-border/40">
-            <div className="flex items-center gap-3">
-              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl gradient-primary-bg shadow-sm">
-                <Sparkles className="h-5 w-5 text-primary-foreground" />
-              </div>
-              <div className="min-w-0">
-                <h3 className="font-semibold text-base">AI Generated Summary</h3>
-                <p className="truncate text-xs text-muted-foreground flex items-center gap-2">
-                  <span>📄 {selectedPaper}</span>
-                  {activeQuery && (
-                    <>
-                      <span>•</span>
-                      <span className="text-primary font-medium">Focus: {activeQuery}</span>
-                    </>
-                  )}
-                </p>
-              </div>
-            </div>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* LEFT: Main Summary Column (8 cols) */}
+          <div className="lg:col-span-8 space-y-5">
+            <div className="rounded-2xl bg-secondary/20 border border-border/40 p-5 sm:p-7 shadow-sm backdrop-blur-sm space-y-5">
+              {/* Summary Top Bar */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-border/30">
+                <div className="flex items-center gap-3">
+                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl gradient-primary-bg shadow-sm">
+                    <Sparkles className="h-5 w-5 text-primary-foreground" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-semibold text-base font-display">
+                      Executive Research Summary
+                    </h3>
+                    <p className="truncate text-xs text-muted-foreground font-mono">
+                      {selectedPaper}
+                    </p>
+                  </div>
+                </div>
 
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={copySummary}
-                className="h-8 text-xs border-border/40"
-              >
-                {copied ? (
-                  <>
-                    <Check className="h-3.5 w-3.5 mr-1 text-emerald-400" />
-                    Copied!
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-3.5 w-3.5 mr-1" />
-                    Copy
-                  </>
-                )}
-              </Button>
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => handleGenerateSummary()}
-                className="h-8 text-xs gap-1"
-              >
-                <RotateCcw className="h-3 w-3" />
-                Rerun Agent
-              </Button>
+                <div className="flex items-center gap-2 self-start sm:self-center">
+                  {activeQuery && (
+                    <span className="inline-flex items-center gap-1 rounded-lg bg-primary/10 border border-primary/20 px-2.5 py-1 text-xs text-primary font-medium">
+                      Focus: {activeQuery}
+                    </span>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleGenerateSummary()}
+                    className="h-8 text-xs gap-1 border-border/40"
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    Rerun
+                  </Button>
+                </div>
+              </div>
+
+              {/* Formatted Markdown Content */}
+              <div className="overflow-x-auto text-sm leading-relaxed text-foreground/90">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    h1: ({ node, ...props }) => (
+                      <h1 className="text-xl font-bold mt-5 mb-3 text-foreground font-display tracking-tight border-b border-border/30 pb-2" {...props} />
+                    ),
+                    h2: ({ node, ...props }) => (
+                      <h2 className="text-lg font-bold mt-5 mb-2.5 text-foreground font-display tracking-tight" {...props} />
+                    ),
+                    h3: ({ node, children, ...props }: any) => {
+                      const headingText = typeof children === "string" ? children : Array.isArray(children) ? children.join("") : "";
+                      const isAudit = /plagiarism|originality|authenticity/i.test(headingText);
+                      return (
+                        <h3
+                          className={`text-base font-semibold mt-5 mb-2 font-display border-b pb-1 tracking-tight flex items-center gap-2 ${
+                            isAudit
+                              ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/5 px-3 py-1.5 rounded-xl mt-6"
+                              : "text-primary border-border/30"
+                          }`}
+                          {...props}
+                        >
+                          {isAudit && <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0" />}
+                          <span>{children}</span>
+                        </h3>
+                      );
+                    },
+                    h4: ({ node, ...props }) => (
+                      <h4 className="text-sm font-semibold mt-3 mb-1 text-foreground font-display tracking-tight" {...props} />
+                    ),
+                    p: ({ node, ...props }) => (
+                      <p className="leading-relaxed mb-3 text-foreground/90 text-sm" {...props} />
+                    ),
+                    ul: ({ node, ...props }) => (
+                      <ul className="list-disc pl-5 space-y-1.5 mb-3 text-foreground/90" {...props} />
+                    ),
+                    ol: ({ node, ...props }) => (
+                      <ol className="list-decimal pl-5 space-y-1.5 mb-3 text-foreground/90" {...props} />
+                    ),
+                    li: ({ node, children, ...props }: any) => (
+                      <li className="leading-relaxed pl-0.5" {...props}>
+                        {children}
+                      </li>
+                    ),
+                    strong: ({ node, ...props }) => (
+                      <strong className="font-semibold text-foreground" {...props} />
+                    ),
+                    code: ({ node, inline, ...props }: any) => (
+                      <code className="rounded bg-secondary/80 px-1.5 py-0.5 text-xs font-mono text-primary font-medium border border-border/40" {...props} />
+                    ),
+                    blockquote: ({ node, ...props }) => (
+                      <blockquote className="border-l-4 border-primary/50 pl-4 py-1 italic my-3 text-muted-foreground bg-secondary/20 rounded-r-xl" {...props} />
+                    ),
+                    table: ({ node, ...props }) => (
+                      <div className="my-4 w-full overflow-x-auto rounded-xl border border-border/60 shadow-sm">
+                        <table className="w-full text-left text-xs border-collapse" {...props} />
+                      </div>
+                    ),
+                    thead: ({ node, ...props }) => (
+                      <thead className="bg-secondary/80 text-foreground font-semibold border-b border-border/60" {...props} />
+                    ),
+                    th: ({ node, ...props }) => (
+                      <th className="px-4 py-3 font-semibold text-foreground tracking-wide whitespace-nowrap" {...props} />
+                    ),
+                    td: ({ node, ...props }) => (
+                      <td className="px-4 py-2.5 border-t border-border/30 text-muted-foreground align-top" {...props} />
+                    ),
+                    hr: () => <hr className="my-4 border-border/40" />,
+                  }}
+                >
+                  {normalizeMarkdown(summary)}
+                </ReactMarkdown>
+              </div>
             </div>
           </div>
 
-          {/* Formatted Markdown Output */}
-          <div className="overflow-x-auto text-sm leading-relaxed space-y-4">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                h1: ({ node, ...props }) => (
-                  <h1 className="text-xl font-bold mt-5 mb-2.5 text-foreground font-display tracking-tight" {...props} />
-                ),
-                h2: ({ node, ...props }) => (
-                  <h2 className="text-lg font-bold mt-4 mb-2 text-foreground font-display tracking-tight" {...props} />
-                ),
-                h3: ({ node, ...props }) => (
-                  <h3 className="text-base font-semibold mt-4 mb-2 text-primary font-display border-b border-border/30 pb-1" {...props} />
-                ),
-                p: ({ node, ...props }) => (
-                  <p className="leading-relaxed mb-3 text-foreground/90" {...props} />
-                ),
-                ul: ({ node, ...props }) => (
-                  <ul className="list-disc list-inside space-y-2 mb-4 text-foreground/90 pl-1" {...props} />
-                ),
-                ol: ({ node, ...props }) => (
-                  <ol className="list-decimal list-inside space-y-2 mb-4 text-foreground/90 pl-1" {...props} />
-                ),
-                li: ({ node, ...props }) => (
-                  <li className="leading-relaxed" {...props} />
-                ),
-                strong: ({ node, ...props }) => (
-                  <strong className="font-semibold text-foreground" {...props} />
-                ),
-                blockquote: ({ node, ...props }) => (
-                  <blockquote className="border-l-4 border-primary/50 pl-4 py-1 italic my-3 text-muted-foreground bg-secondary/20 rounded-r-lg" {...props} />
-                ),
-                table: ({ node, ...props }) => (
-                  <div className="my-4 w-full overflow-x-auto rounded-xl border border-border/60 shadow-sm">
-                    <table className="w-full text-left text-xs border-collapse" {...props} />
+          {/* RIGHT: Insight & Context Column (4 cols) */}
+          <div className="lg:col-span-4 space-y-5">
+            {/* Card 1: Paper Information */}
+            <div className="rounded-2xl bg-secondary/20 border border-border/40 p-5 shadow-sm space-y-3.5">
+              <div className="flex items-center gap-2 pb-2.5 border-b border-border/30">
+                <FileText className="h-4 w-4 text-primary" />
+                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Paper Information
+                </h4>
+              </div>
+
+              <div className="space-y-2.5 text-xs">
+                <div>
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">
+                    Filename
+                  </span>
+                  <p className="font-mono text-foreground font-medium truncate mt-0.5" title={selectedPaper}>
+                    {selectedPaper}
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between pt-1">
+                  <span className="text-muted-foreground">Format:</span>
+                  <span className="font-medium text-foreground">PDF Document</span>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Analysis Status:</span>
+                  <span className="inline-flex items-center gap-1 text-emerald-400 font-medium">
+                    <CheckCircle2 className="h-3 w-3" /> Grounded & Verified
+                  </span>
+                </div>
+
+                {selectedPaperObj?.uploaded_at && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Uploaded:</span>
+                    <span className="text-foreground">{selectedPaperObj.uploaded_at}</span>
                   </div>
-                ),
-                thead: ({ node, ...props }) => (
-                  <thead className="bg-secondary/80 text-foreground font-semibold border-b border-border/60" {...props} />
-                ),
-                th: ({ node, ...props }) => (
-                  <th className="px-4 py-3 font-semibold text-foreground tracking-wide whitespace-nowrap" {...props} />
-                ),
-                td: ({ node, ...props }) => (
-                  <td className="px-4 py-2.5 border-t border-border/30 text-muted-foreground align-top" {...props} />
-                ),
-                hr: () => <hr className="my-5 border-border/40" />,
-              }}
-            >
-              {summary}
-            </ReactMarkdown>
+                )}
+              </div>
+
+              <div className="pt-2 border-t border-border/30 flex items-center justify-between gap-2">
+                <Link
+                  to="/dashboard/papers"
+                  search={{ paper: selectedPaper }}
+                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline font-medium"
+                >
+                  <Search className="h-3 w-3" /> Open Search
+                </Link>
+                <Link
+                  to="/dashboard/history"
+                  className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground font-medium"
+                >
+                  <Clock className="h-3 w-3" /> History
+                </Link>
+              </div>
+            </div>
+
+            {/* Card 2: Research Workflow Navigator ("Research Journey") */}
+            <div className="rounded-2xl bg-secondary/20 border border-border/40 p-5 shadow-sm space-y-3.5">
+              <div className="flex items-center gap-2 pb-2.5 border-b border-border/30">
+                <Compass className="h-4 w-4 text-primary" />
+                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Research Journey
+                </h4>
+              </div>
+
+              <div className="space-y-2 text-xs">
+                <Link
+                  to="/dashboard/papers"
+                  className="flex items-center justify-between p-1.5 rounded-lg text-muted-foreground hover:bg-secondary/40 hover:text-foreground transition-colors"
+                >
+                  <span className="flex items-center gap-2">
+                    <Check className="h-3.5 w-3.5 text-emerald-400" />
+                    1. Paper Search
+                  </span>
+                  <ExternalLink className="h-3 w-3 opacity-40" />
+                </Link>
+
+                <Link
+                  to="/dashboard/upload"
+                  className="flex items-center justify-between p-1.5 rounded-lg text-muted-foreground hover:bg-secondary/40 hover:text-foreground transition-colors"
+                >
+                  <span className="flex items-center gap-2">
+                    <Check className="h-3.5 w-3.5 text-emerald-400" />
+                    2. Paper Upload
+                  </span>
+                  <ExternalLink className="h-3 w-3 opacity-40" />
+                </Link>
+
+                <Link
+                  to="/dashboard/chat"
+                  search={{ paper: selectedPaper }}
+                  className="flex items-center justify-between p-1.5 rounded-lg text-muted-foreground hover:bg-secondary/40 hover:text-foreground transition-colors"
+                >
+                  <span className="flex items-center gap-2">
+                    <MessageSquare className="h-3.5 w-3.5 text-primary" />
+                    3. AI Chat
+                  </span>
+                  <ArrowRight className="h-3 w-3 opacity-50" />
+                </Link>
+
+                <div className="flex items-center justify-between p-1.5 rounded-lg bg-primary/15 text-primary font-medium border border-primary/25">
+                  <span className="flex items-center gap-2">
+                    <Sparkles className="h-3.5 w-3.5 text-primary" />
+                    4. Research Summary
+                  </span>
+                  <span className="text-[10px] font-bold uppercase">Active</span>
+                </div>
+
+                <Link
+                  to="/dashboard/gaps"
+                  search={{ paper: selectedPaper }}
+                  className="flex items-center justify-between p-1.5 rounded-lg text-muted-foreground hover:bg-secondary/40 hover:text-foreground transition-colors"
+                >
+                  <span className="flex items-center gap-2">
+                    <Lightbulb className="h-3.5 w-3.5" />
+                    5. Research Gaps
+                  </span>
+                  <ArrowRight className="h-3 w-3 opacity-50" />
+                </Link>
+
+                <Link
+                  to="/dashboard/literature"
+                  search={{ paper: selectedPaper }}
+                  className="flex items-center justify-between p-1.5 rounded-lg text-muted-foreground hover:bg-secondary/40 hover:text-foreground transition-colors"
+                >
+                  <span className="flex items-center gap-2">
+                    <BookOpen className="h-3.5 w-3.5" />
+                    6. Literature Survey
+                  </span>
+                  <ArrowRight className="h-3 w-3 opacity-50" />
+                </Link>
+
+                <Link
+                  to="/dashboard/experiments"
+                  search={{ paper: selectedPaper }}
+                  className="flex items-center justify-between p-1.5 rounded-lg text-muted-foreground hover:bg-secondary/40 hover:text-foreground transition-colors"
+                >
+                  <span className="flex items-center gap-2">
+                    <FlaskConical className="h-3.5 w-3.5" />
+                    7. Experiments
+                  </span>
+                  <ArrowRight className="h-3 w-3 opacity-50" />
+                </Link>
+
+                <Link
+                  to="/dashboard/report"
+                  className="flex items-center justify-between p-1.5 rounded-lg text-muted-foreground hover:bg-secondary/40 hover:text-foreground transition-colors"
+                >
+                  <span className="flex items-center gap-2">
+                    <FileSpreadsheet className="h-3.5 w-3.5" />
+                    8. IEEE Report
+                  </span>
+                  <ArrowRight className="h-3 w-3 opacity-50" />
+                </Link>
+              </div>
+            </div>
+
+            {/* Card 3: AI Research Pipeline */}
+            <div className="rounded-2xl bg-secondary/20 border border-border/40 p-5 shadow-sm space-y-3.5">
+              <div className="flex items-center gap-2 pb-2.5 border-b border-border/30">
+                <Layers className="h-4 w-4 text-primary" />
+                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  AI Research Pipeline
+                </h4>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div className="flex items-start gap-2.5">
+                  <div className="h-5 w-5 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center shrink-0 text-emerald-400 font-bold text-[10px]">
+                    1
+                  </div>
+                  <div>
+                    <span className="font-semibold text-foreground">Document Ingestion</span>
+                    <p className="text-[11px] text-muted-foreground">PDF text extracted & parsed</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2.5">
+                  <div className="h-5 w-5 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center shrink-0 text-emerald-400 font-bold text-[10px]">
+                    2
+                  </div>
+                  <div>
+                    <span className="font-semibold text-foreground">Content Retrieval</span>
+                    <p className="text-[11px] text-muted-foreground">Multi-tier evidence extraction</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2.5">
+                  <div className="h-5 w-5 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center shrink-0 text-emerald-400 font-bold text-[10px]">
+                    3
+                  </div>
+                  <div>
+                    <span className="font-semibold text-foreground">Summary Synthesis</span>
+                    <p className="text-[11px] text-muted-foreground">Methodology, metrics & takeaways</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-2.5">
+                  <div className="h-5 w-5 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center shrink-0 text-emerald-400 font-bold text-[10px]">
+                    4
+                  </div>
+                  <div>
+                    <span className="font-semibold text-foreground">Integrity & Authenticity</span>
+                    <p className="text-[11px] text-muted-foreground">Scholarly originality verified</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 4: Next Quick Actions */}
+            <div className="rounded-2xl bg-secondary/20 border border-border/40 p-5 shadow-sm space-y-2.5">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Next Research Steps
+              </h4>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                Seamlessly transfer this paper to other specialized AI agents:
+              </p>
+
+              <div className="space-y-2 pt-1">
+                <Link
+                  to="/dashboard/gaps"
+                  search={{ paper: selectedPaper }}
+                  className="block"
+                >
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-between h-8 text-xs border-border/50 hover:border-primary/40 font-medium"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Lightbulb className="h-3.5 w-3.5 text-amber-400" />
+                      Identify Research Gaps
+                    </span>
+                    <ArrowRight className="h-3 w-3 opacity-50" />
+                  </Button>
+                </Link>
+
+                <Link
+                  to="/dashboard/literature"
+                  search={{ paper: selectedPaper }}
+                  className="block"
+                >
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-between h-8 text-xs border-border/50 hover:border-primary/40 font-medium"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <BookOpen className="h-3.5 w-3.5 text-blue-400" />
+                      Run Literature Survey
+                    </span>
+                    <ArrowRight className="h-3 w-3 opacity-50" />
+                  </Button>
+                </Link>
+
+                <Link
+                  to="/dashboard/experiments"
+                  search={{ paper: selectedPaper }}
+                  className="block"
+                >
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-between h-8 text-xs border-border/50 hover:border-primary/40 font-medium"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <FlaskConical className="h-3.5 w-3.5 text-purple-400" />
+                      Design Experiments
+                    </span>
+                    <ArrowRight className="h-3 w-3 opacity-50" />
+                  </Button>
+                </Link>
+              </div>
+            </div>
           </div>
         </div>
       )}
     </div>
   );
 }
+export default SummaryCommandCenterPage;

@@ -2,8 +2,50 @@ import re
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from app.llm.gemini import generate_answer
-from app.llm.multi_api_router import call_groq_api
+from app.llm.multi_api_router import (
+    call_cohere_api,
+    call_mistral_api,
+    call_groq_api,
+    call_openrouter_api,
+)
 from app.agents.coordinator import load_context_for_paper
+
+
+def clean_single_literature_output(text: str) -> str:
+    """
+    Clean LLM literature survey output while preserving valid Markdown headers, lists, and tables.
+    """
+    if not text:
+        return ""
+
+    result = text.strip()
+
+    # Strip code block fences if any
+    result = re.sub(
+        r"^```(?:text|markdown|plain)?\s*",
+        "",
+        result,
+        flags=re.IGNORECASE,
+    )
+    result = re.sub(r"\s*```$", "", result)
+
+    # Handle literal escaped characters
+    result = (
+        result.replace("\\r\\n", "\n")
+        .replace("\\n", "\n")
+        .replace("\\r", "\n")
+        .replace('\\"', '"')
+        .replace("\\'", "'")
+        .replace("\x00", "")
+        .replace("\ufffd", "—")
+    )
+
+    # Ensure clean blank line before markdown headers
+    result = re.sub(r'([^\n])\n(#{1,6}\s+)', r'\1\n\n\2', result)
+
+    # Normalize excessive blank lines
+    result = re.sub(r"\n{3,}", "\n\n", result)
+    return result.strip()
 
 
 # ==========================================================
@@ -11,69 +53,143 @@ from app.agents.coordinator import load_context_for_paper
 # ==========================================================
 
 
-def generate_literature_survey(context: str) -> str:
+def generate_literature_survey(
+    context: Optional[str] = None,
+    paper_name: Optional[str] = None,
+    query: Optional[str] = None,
+    pdf_url: Optional[str] = None,
+    **kwargs: Any,
+) -> str:
     """
-    Generate a comprehensive, evidence-grounded literature survey
-    for one research paper.
+    Generate an evidence-grounded, comprehensive academic literature survey
+    for one research paper, strictly conditioned on the specified research topic/query.
     """
+    doc_title = (
+        paper_name
+        or kwargs.get("title")
+        or kwargs.get("document_name")
+        or "Uploaded Research Paper"
+    )
 
-    if not context or not context.strip():
+    content = (
+        context
+        or kwargs.get("text", "")
+        or kwargs.get("paper_context", "")
+        or ""
+    )
+
+    # If context is not passed directly, retrieve it from the uploaded paper
+    if not content or len(content.strip()) < 100:
+        retrieved = load_context_for_paper(
+            paper_name=doc_title,
+            query=query or "literature survey related work methodology baselines",
+            pdf_url=pdf_url,
+        )
+        if retrieved and len(retrieved.strip()) >= 100:
+            content = retrieved
+
+    if not content or len(content.strip()) < 50:
         return (
-            "Unable to generate literature survey because "
-            "no research paper context was provided."
+            "Insufficient research paper context available to synthesize an accurate literature survey. "
+            "Please verify the uploaded document."
         )
 
-    question = """
-Analyze the provided research paper context thoroughly and act as an expert academic literature survey reviewer.
+    clean_topic = (query or "").strip()
+    has_custom_topic = bool(
+        clean_topic
+        and clean_topic.lower() not in [
+            "literature",
+            "literature_survey",
+            "survey",
+            "related work",
+            "summary",
+            "academic research topic",
+        ]
+    )
 
-Generate a comprehensive, structured literature survey for this research paper.
+    paper_context = content[:32000]
 
-Use EXACTLY this Markdown structure:
+    question = f"""You are ResearchX, a Senior Academic Literature Reviewer and Scholarly Domain Analyst.
+Your task is to produce a rigorous, authoritative, and evidence-grounded academic literature survey based specifically on the provided research paper context.
 
-### 1. Research Domain & Problem Scope
-- **Domain:** State the specific subfield and computational/theoretical domain.
-- **Problem Statement:** Explain the core research problem, challenge, or technical bottleneck addressed by this paper.
+PAPER TITLE: {doc_title}
+{f"TARGET RESEARCH TOPIC / FOCUS: {clean_topic}" if has_custom_topic else ""}
 
----
+{f"IMPORTANT DIRECTIVE: Frame and synthesize this entire literature survey strictly through the lens of the target research topic: '{clean_topic}'. Explicitly analyze how this paper addresses, advances, or challenges the state of the art in '{clean_topic}', highlighting relevant methodology, empirical baselines, and unresolved domain gaps." if has_custom_topic else "Analyze the paper's domain placement, methodologies, baselines, and open research frontiers thoroughly."}
 
-### 2. Proposed Approach & Methodology
-- Synthesize the primary method, model, algorithm, pipeline, or architectural design proposed by the authors. Describe how it functions to solve the problem.
+FORMAT YOUR RESPONSE IN CLEAN, PROFESSIONAL MARKDOWN USING THESE EXACT SECTIONS:
 
----
+### 1. Research Topic & Domain Scope
+- **Target Research Focus:** State clearly how this work addresses {f"the research topic '{clean_topic}'" if has_custom_topic else "its core domain"}.
+- **Core Problem Statement:** The fundamental technical, theoretical, or algorithmic bottleneck investigated in this paper.
+- **Scholarly Motivation:** Why this problem is critical to the domain and the primary objective of this investigation.
+
+### 2. Proposed Methodology & Technical Architecture
+- **Core Approach / Pipeline:** The specific algorithm, architecture, mathematical formulation, or mechanism proposed by the authors.
+- **Operational Mechanics:** How the proposed framework operates to resolve the core problem.
+- **Key Novelty Factor:** The specific technical differentiation that distinguishes this method from prior art.
 
 ### 3. Empirical Findings & Breakthroughs
-- Summarize the main breakthroughs, empirical findings, performance gains, or conceptual conclusions demonstrated in the work.
+- **Primary Performance Metrics:** Quantitative gains, benchmark numbers, or qualitative breakthroughs reported in the paper.
+- **Validation Scope:** Datasets, benchmark environments, or empirical settings used to evaluate the method.
+- **Key Empirical Takeaway:** The single most impactful empirical conclusion supported by the evidence.
 
----
-
-### 4. Benchmark Datasets & Evaluation Scope
-- Detail the benchmark datasets, experimental environments, or evaluation domains targeted or utilized in this research.
-
----
+### 4. Related Work & Baseline Comparisons
+- **Lineage & Foundational Baselines:** Prior techniques, classical approaches, or competing models cited and compared against in the paper.
+- **Comparative Advantages:** Where the proposed approach quantitatively or qualitatively surpasses prior baselines.
+- **Technical Trade-offs:** Any computational overhead, memory demands, sample complexity, or training constraints introduced.
 
 ### 5. Research Gaps & Open Challenges
-- Critically evaluate the primary limitations, computational bottlenecks, assumption boundaries, or open research vectors highlighted by or remaining from this work.
+- **Author-Acknowledged Limitations:** Explicit constraints, assumption boundaries, or failure modes documented in the paper.
+- **Unaddressed Domain Bottlenecks:** Technical research gaps in {f"'{clean_topic}'" if has_custom_topic else "this domain"} that remain unsolved despite this paper.
+- **High-Impact Future Directions:** Concrete, actionable research vectors proposed or required for next-generation work.
 
----
-
-### 6. Scholarly Positioning & Key Takeaway
-- Explain the significance of this paper in the broader landscape of the field and provide ONE concise concluding takeaway sentence.
+### 6. Scholarly Verdict & Synthesis
+- **Domain Impact Assessment:** A concise 2-3 sentence academic evaluation of the paper's contribution to scholarly literature.
+- **Definitive Concluding Takeaway:** One concluding sentence summarizing the lasting significance of this work.
 
 STRICT ACADEMIC GUIDELINES:
-- Ground all insights strictly in the paper's context and research scope.
-- Do NOT output generic placeholders like "Not specified", "N/A", or "Not available". Thoroughly synthesize each section using the technical details, problem framing, and methodology from the paper.
-- Keep the response well-structured, precise, and academic.
+- Ground all statements strictly in the supplied research paper context. Do NOT hallucinate facts, metrics, or citations.
+- Do NOT output generic placeholders like "Not specified", "N/A", or "Not available". Synthesize all insights directly from the paper's methodology, experiments, and analysis.
+- Maintain high-density, precise scholarly prose.
 """
 
-    try:
-        return generate_answer(
-            context=context,
-            question=question,
-        )
+    result = ""
 
+    # Strategy 1: Cohere Command-R (Best for long scholarly context)
+    try:
+        result = call_cohere_api(prompt=question, context=paper_context)
     except Exception as e:
-        print(f"[Literature Survey Agent Error]: {e}")
-        return "Unable to generate literature survey."
+        print(f"[Literature Agent Cohere Error]: {e}")
+
+    # Strategy 2: Mistral Fallback
+    if not result or len(result.strip()) < 50 or "failed" in result.lower() or "no llm api" in result.lower():
+        try:
+            print("[Literature Agent] Cohere unavailable, falling back to Mistral...")
+            result = call_mistral_api(prompt=question, context=paper_context)
+        except Exception as e:
+            print(f"[Literature Agent Mistral Error]: {e}")
+
+    # Strategy 3: Groq / OpenRouter Fallback
+    if not result or len(result.strip()) < 50 or "failed" in result.lower() or "no llm api" in result.lower():
+        try:
+            print("[Literature Agent] Falling back to Groq...")
+            result = call_groq_api(prompt=question, context=paper_context)
+        except Exception as e:
+            print(f"[Literature Agent Groq Error]: {e}")
+
+    # Strategy 4: Gemini Fallback
+    if not result or len(result.strip()) < 50 or "failed" in result.lower() or "no llm api" in result.lower():
+        try:
+            print("[Literature Agent] Falling back to Gemini...")
+            result = generate_answer(context=paper_context, question=question)
+        except Exception as e:
+            print(f"[Literature Agent Gemini Error]: {e}")
+
+    if not result or not result.strip():
+        return "Unable to generate literature survey from the provided paper context."
+
+    return clean_single_literature_output(result)
 
 
 # ==========================================================
@@ -279,8 +395,14 @@ RULES:
                 p_title = paper.get("title") or paper.get("paper_name") or "Untitled Paper"
                 p_abstract = paper.get("abstract") or paper.get("summary") or paper.get("why_chosen") or ""
                 p_venue = paper.get("venue") or "Academic Source"
+            elif isinstance(paper, str):
+                p_title = paper
+                p_abstract = ""
+                p_venue = "Academic Source"
             else:
                 p_title = getattr(paper, "title", None) or getattr(paper, "paper_name", None) or "Untitled Paper"
+                if callable(p_title):
+                    p_title = str(paper)
                 p_abstract = getattr(paper, "abstract", None) or getattr(paper, "summary", None) or getattr(paper, "why_chosen", None) or ""
                 p_venue = getattr(paper, "venue", "") or "Academic Source"
 

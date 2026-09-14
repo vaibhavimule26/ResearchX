@@ -941,56 +941,63 @@ def normalize_workspace_query(query: str) -> str:
     return query
 
 
+_SPELLING_CACHE: Dict[str, str] = {}
+_cohere_spelling_client = None
+
+
 async def correct_query_spelling(query: str) -> str:
     """
-    Generic AI-based correction for arbitrary research queries.
-    Domain-agnostic, fixes spelling, typos, and syntax while preserving research intent.
+    Intelligent AI-based interpretation and spelling correction for academic research queries.
+    Interprets user intent, fixes spelling mistakes, typos, and syntax while preserving research semantics.
+    Uses in-memory caching to ensure instant resolution for repeated queries.
     """
     if not query or not query.strip():
         return ""
 
     raw_query = query.strip()
+    cache_key = raw_query.lower()
+    if cache_key in _SPELLING_CACHE:
+        return _SPELLING_CACHE[cache_key]
 
-    prompt = f"""You are an academic research query correction engine.
-Your task is ONLY to correct spelling errors, typing mistakes, and obvious spacing mistakes in academic queries.
+    prompt = f"""You are an intelligent academic research query interpretation and auto-correction engine.
+Your task is to understand the query, interpret the user's research intent, and correct any spelling errors, typos, phonetics, and grammar.
 
 Rules:
 1. Support any academic/scientific domain.
-2. Fix misspelled words and technical terms (e.g., 'deeepfake detction' -> 'deepfake detection', 'transfomer netwrok' -> 'transformer network', 'quantm computng' -> 'quantum computing').
-3. Preserve the exact research intent.
-4. If the query is already correct, return it unchanged.
-5. Return ONLY the corrected search query without explanations, quotation marks, or markdown.
+2. Fix misspelled words and technical terms (e.g., 'machne learnng in helthcare' -> 'Machine Learning in Healthcare', 'artficial inteligence for diseas detecshun' -> 'Artificial Intelligence for Disease Detection', 'deeepfake detction' -> 'Deepfake Detection', 'transfomer netwrok for nlp' -> 'Transformer Network for NLP', 'quantm computng' -> 'Quantum Computing').
+3. Understand and preserve the exact academic research intent.
+4. If the query is already well-formed, return it cleanly.
+5. Return ONLY the interpreted, corrected query without explanations, quotation marks, prefixes, or markdown.
 
 Input query: {raw_query}
 
 Corrected query:"""
 
-    # 1. Primary: Groq (llama-3.3-70b-versatile or llama-3.1-8b-instant)
-    groq_api_key = os.getenv("GROQ_API_KEY")
-    if groq_api_key:
+    # 1. Primary: Cohere (command-r-08-2024 - verified ultra-fast & highly accurate)
+    global _cohere_spelling_client
+    cohere_api_key = os.getenv("COHERE_API_KEY")
+    if cohere_api_key:
         try:
-            from groq import AsyncGroq
-            client = AsyncGroq(api_key=groq_api_key)
-            for model_candidate in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192"]:
-                try:
-                    response = await client.chat.completions.create(
-                        model=model_candidate,
-                        messages=[{"role": "user", "content": prompt}],
-                        temperature=0,
-                        max_tokens=100,
-                    )
-                    corrected = (response.choices[0].message.content or "").strip()
-                    corrected = re.sub(r"^```(?:text)?\s*", "", corrected, flags=re.IGNORECASE)
-                    corrected = re.sub(r"\s*```$", "", corrected)
-                    corrected = corrected.strip().strip('"').strip("'")
-                    if corrected and len(corrected) > 2 and "\n" not in corrected:
-                        print(f"[Query Correction Groq] '{raw_query}' -> '{corrected}'")
-                        return corrected
-                except Exception as model_err:
-                    print(f"[Query Correction Groq Model {model_candidate}]: {model_err}")
-                    continue
-        except Exception as e:
-            print(f"[Query Correction Groq Error] {e}")
+            if _cohere_spelling_client is None:
+                import cohere
+                _cohere_spelling_client = cohere.ClientV2(api_key=cohere_api_key)
+            co = _cohere_spelling_client
+            res = co.chat(
+                model="command-r-08-2024",
+                messages=[{"role": "user", "content": prompt}],
+            )
+            if res and res.message and res.message.content:
+                corrected = res.message.content[0].text.strip()
+                corrected = re.sub(r"^```(?:text)?\s*", "", corrected, flags=re.IGNORECASE)
+                corrected = re.sub(r"\s*```$", "", corrected)
+                corrected = corrected.strip().strip('"').strip("'")
+                corrected = re.sub(r"^(?:Corrected\s*query|Output|Result):\s*", "", corrected, flags=re.IGNORECASE).strip()
+                if corrected and len(corrected) > 2 and "\n" not in corrected:
+                    print(f"[Query Interpretation Cohere] '{raw_query}' -> '{corrected}'")
+                    _SPELLING_CACHE[cache_key] = corrected
+                    return corrected
+        except Exception as cohere_err:
+            print(f"[Query Interpretation Cohere Error]: {cohere_err}")
 
     # 2. Secondary: Mistral
     mistral_api_key = os.getenv("MISTRAL_API_KEY")
@@ -1010,12 +1017,41 @@ Corrected query:"""
                 if res.status_code == 200:
                     data = res.json()
                     corrected = data["choices"][0]["message"]["content"].strip().strip('"').strip("'")
+                    corrected = re.sub(r"^(?:Corrected\s*query|Output|Result):\s*", "", corrected, flags=re.IGNORECASE).strip()
                     if corrected and "\n" not in corrected:
-                        print(f"[Query Correction Mistral] '{raw_query}' -> '{corrected}'")
+                        print(f"[Query Interpretation Mistral] '{raw_query}' -> '{corrected}'")
+                        _SPELLING_CACHE[cache_key] = corrected
                         return corrected
         except Exception as e:
-            print(f"[Query Correction Mistral Error] {e}")
+            print(f"[Query Interpretation Mistral Error]: {e}")
 
+    # 3. Tertiary: OpenRouter
+    openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
+    if openrouter_api_key:
+        try:
+            async with httpx.AsyncClient(timeout=10) as http_client:
+                res = await http_client.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {openrouter_api_key}", "Content-Type": "application/json"},
+                    json={
+                        "model": "meta-llama/llama-3.3-70b-instruct:free",
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0,
+                        "max_tokens": 100,
+                    },
+                )
+                if res.status_code == 200:
+                    data = res.json()
+                    corrected = data["choices"][0]["message"]["content"].strip().strip('"').strip("'")
+                    corrected = re.sub(r"^(?:Corrected\s*query|Output|Result):\s*", "", corrected, flags=re.IGNORECASE).strip()
+                    if corrected and "\n" not in corrected:
+                        print(f"[Query Interpretation OpenRouter] '{raw_query}' -> '{corrected}'")
+                        _SPELLING_CACHE[cache_key] = corrected
+                        return corrected
+        except Exception as e:
+            print(f"[Query Interpretation OpenRouter Error]: {e}")
+
+    _SPELLING_CACHE[cache_key] = raw_query
     return raw_query
 
 

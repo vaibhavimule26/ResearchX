@@ -1,393 +1,450 @@
+import os
+import re
+from typing import Any, Dict, List, Optional
+
+from app.agents.coordinator import load_context_for_paper
 from app.llm.gemini import generate_answer
+
+
+def clean_report_output(text: str) -> str:
+    """
+    Sanitize and normalize generated IEEE report markdown:
+    - Strip markdown code fences
+    - Remove conversational introductory chatter
+    - Normalize Unicode dashes, quotation marks, and line breaks
+    - Preserve IEEE section headings, tables, and numbered references
+    """
+    if not text:
+        return ""
+
+    result = text.strip()
+
+    # Strip code block fences if any
+    result = re.sub(
+        r"^```(?:markdown|text|plain)?\s*",
+        "",
+        result,
+        flags=re.IGNORECASE,
+    )
+    result = re.sub(r"\s*```$", "", result)
+
+    # Normalize line breaks and escaped characters
+    result = (
+        result.replace("\\r\\n", "\n")
+        .replace("\\n", "\n")
+        .replace("\\r", "\n")
+        .replace('\\"', '"')
+        .replace("\\'", "'")
+        .replace("\x00", "")
+        .replace("\ufffd", "—")
+    )
+
+    # Remove conversational preamble if model outputs phrases like:
+    # "Here is the IEEE-style research report based on the provided context:"
+    preamble_match = re.search(
+        r"(?:^|\n)(#[^#\n]+|\*\*Title:\*\*|TITLE:)",
+        result,
+        flags=re.IGNORECASE,
+    )
+    if preamble_match and preamble_match.start() > 0:
+        result = result[preamble_match.start():].strip()
+
+    # Normalize canonical IEEE Roman numeral section headings
+    result = re.sub(
+        r"^##\s*(?:I|\b1)\b\.?\s*INTRODUCTION.*$",
+        "## I. INTRODUCTION",
+        result,
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+    result = re.sub(
+        r"^##\s*(?:II|\b2)\b\.?\s*RELATED.*$",
+        "## II. RELATED WORK",
+        result,
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+    result = re.sub(
+        r"^##\s*(?:III|\b3)\b\.?\s*(?:PROBLEM|SYSTEM\s*MODEL).*$",
+        "## III. PROBLEM STATEMENT & OBJECTIVES",
+        result,
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+    result = re.sub(
+        r"^##\s*(?:IV|\b4)\b\.?\s*METHODOLOGY.*$",
+        "## IV. METHODOLOGY & SYSTEM ARCHITECTURE",
+        result,
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+    result = re.sub(
+        r"^##\s*(?:V|\b5)\b\.?\s*(?:EXPERIMENTAL|EXPERIMENTS).*$",
+        "## V. EXPERIMENTAL SETUP & DATASETS",
+        result,
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+    result = re.sub(
+        r"^##\s*(?:VI|\b6)\b\.?\s*RESULTS.*$",
+        "## VI. RESULTS AND DISCUSSION",
+        result,
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+    result = re.sub(
+        r"^##\s*(?:VII|\b7)\b\.?\s*LIMITATIONS.*$",
+        "## VII. LIMITATIONS & RESEARCH GAPS",
+        result,
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+    result = re.sub(
+        r"^##\s*(?:VIII|\b8)\b\.?\s*CONCLUSION.*$",
+        "## VIII. CONCLUSION & FUTURE WORK",
+        result,
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+    result = re.sub(
+        r"^##\s*(?:IX|\b9|\bREFERENCES\b).*REFERENCES.*$",
+        "## REFERENCES",
+        result,
+        flags=re.IGNORECASE | re.MULTILINE,
+    )
+
+    # Normalize excess blank lines
+    result = re.sub(r"\n{3,}", "\n\n", result)
+
+    return result.strip()
 
 
 # ==========================================================
 # IEEE Report Agent
 # ==========================================================
 
-def generate_ieee_report(context: str) -> str:
+def generate_ieee_report(
+    context: Optional[str] = None,
+    paper_name: Optional[str] = None,
+    query: Optional[str] = None,
+    **kwargs: Any,
+) -> str:
     """
-    Generate a source-grounded IEEE-style research report
-    from the provided research paper context.
+    Generate an authoritative, publication-grade IEEE Transactions research report
+    following the official IEEE manuscript structure.
+    
+    Core Principles:
+    - The source PDF is the SOURCE OF RESEARCH CONTENT, not the formatting template.
+    - Regardless of whether the source PDF is single-column, has non-standard headings,
+      or lacks standard sections, the output MUST be restructured into the official
+      IEEE Transactions layout (Sections I through VIII + REFERENCES).
+    - If no PDF is provided, supports Query-Only topic research mode.
     """
+    is_query_only = False
+
+    if not context or len(context.strip()) < 50:
+        if paper_name and paper_name.lower().strip() not in ("query_focus", "query focus", "none", ""):
+            context = load_context_for_paper(
+                paper_name=paper_name,
+                query=query or "methodology results datasets experiments literature",
+            )
 
     if not context or not context.strip():
-        return (
-            "Unable to generate IEEE report because "
-            "no research paper context was provided."
-        )
+        if query and query.strip():
+            is_query_only = True
+        else:
+            return (
+                "Unable to generate IEEE report because "
+                "no research paper context or research query was provided."
+            )
 
-    question = """
-You are ResearchX, an expert IEEE research paper writer
-and academic technical editor.
+    doc_title = (
+        paper_name.replace(".pdf", "").replace("_", " ").strip()
+        if paper_name and paper_name.lower().strip() not in ("query_focus", "query focus")
+        else (query.strip().title() if query else "Advanced Machine Learning Investigation")
+    )
 
-Your task is to transform the provided research paper
-context into a complete IEEE-style research report.
-
-CRITICAL SOURCE RULE:
-
-Use ONLY the information contained in the provided context.
-
-Do not use outside knowledge to fill missing information.
-
-If information is unavailable, explicitly write:
-
-"Not specified in the provided paper."
-
-Do not silently infer missing facts.
-
+    query_focus_directive = ""
+    if query and query.strip():
+        query_focus_directive = f"""
 ==========================================================
-REPORT STRUCTURE
+USER RESEARCH QUERY FOCUS
 ==========================================================
-
-Generate the report using the following structure.
-
-TITLE
-
-Use the exact paper title if it is available.
-
-If unavailable:
-
-"Title not available in the provided paper."
-
-AUTHORS
-
-Preserve the authors exactly as provided.
-
-If unavailable:
-
-"Authors not available in the provided paper."
-
-----------------------------------------------------------
-ABSTRACT
-----------------------------------------------------------
-
-Write a professional academic abstract covering:
-
-- Research problem
-- Objective
-- Methodology
-- Dataset / data
-- Main findings
-- Contribution
-- Conclusion
-
-Do NOT invent numerical results.
-
-----------------------------------------------------------
-KEYWORDS
-----------------------------------------------------------
-
-Provide 4–6 keywords.
-
-Use terminology supported by the paper.
-
-----------------------------------------------------------
-I. INTRODUCTION
-----------------------------------------------------------
-
-Include:
-
-1. Background
-2. Research problem
-3. Motivation
-4. Objectives
-5. Research questions, if explicitly available
-6. Importance of the research
-
-Clearly distinguish author claims from your own
-structuring of the information.
-
-----------------------------------------------------------
-II. RELATED WORK / LITERATURE REVIEW
-----------------------------------------------------------
-
-Summarize previous research discussed in the paper.
-
-Include:
-
-- Existing approaches
-- Previous methodologies
-- Their contributions
-- Their limitations
-- How the current paper relates to them
-
-IMPORTANT:
-
-Do NOT introduce external papers.
-
-Do NOT invent citations.
-
-----------------------------------------------------------
-III. PROBLEM STATEMENT AND OBJECTIVES
-----------------------------------------------------------
-
-Clearly explain:
-
-- Problem being solved
-- Existing limitation
-- Research objective
-- Expected contribution
-
-----------------------------------------------------------
-IV. PROPOSED METHODOLOGY
-----------------------------------------------------------
-
-Explain the methodology in detail.
-
-Include, when available:
-
-- Proposed approach
-- Architecture
-- Components
-- Workflow
-- Algorithms
-- Processing pipeline
-- Input
-- Output
-- Training procedure
-- Important parameters
-
-If an architecture diagram is described in the context,
-explain it textually.
-
-Do not invent missing architecture components.
-
-----------------------------------------------------------
-V. DATASET / DATA DESCRIPTION
-----------------------------------------------------------
-
-Include:
-
-- Dataset name
-- Source
-- Data type
-- Modality
-- Dataset size
-- Labels
-- Data preprocessing
-- Purpose
-- Train / validation / test split
-
-ONLY include information explicitly available.
-
-For every unavailable field write:
-
-"Not specified in the provided paper."
-
-----------------------------------------------------------
-VI. EXPERIMENTAL SETUP
-----------------------------------------------------------
-
-Explain:
-
-- Experimental methodology
-- Models
-- Baselines
-- Training configuration
-- Evaluation configuration
-- Hardware
-- Software
-- Experimental conditions
-
-Preserve numerical values exactly as provided.
-
-Never create missing values.
-
-----------------------------------------------------------
-VII. EVALUATION METRICS
-----------------------------------------------------------
-
-List every evaluation metric explicitly mentioned.
-
-For each metric explain its role if supported by
-the paper.
-
-Do not introduce additional metrics as if the authors used them.
-
-----------------------------------------------------------
-VIII. RESULTS
-----------------------------------------------------------
-
-Present the reported results.
-
-Preserve:
-
-- Numerical values
-- Percentages
-- Tables
-- Comparisons
-- Rankings
-- Performance measurements
-
-Do NOT modify or approximate numerical values.
-
-If results are unavailable:
-
-"Experimental results are not specified in the provided paper."
-
-----------------------------------------------------------
-IX. RESULTS ANALYSIS
-----------------------------------------------------------
-
-Analyze only the reported results.
-
-Explain:
-
-- Important observations
-- Performance differences
-- Comparison with baselines
-- Meaning of the reported findings
-
-Do not create unsupported explanations.
-
-Clearly label analytical conclusions as:
-
-"Inferred"
-
-when they are not explicitly stated by the authors.
-
-----------------------------------------------------------
-X. CONTRIBUTIONS
-----------------------------------------------------------
-
-Clearly list the original contributions claimed by the paper.
-
-Separate:
-
-- Technical contribution
-- Methodological contribution
-- Experimental contribution
-- Practical contribution
-
-Do not independently declare something novel unless
-the evidence supports it.
-
-----------------------------------------------------------
-XI. LIMITATIONS
-----------------------------------------------------------
-
-List limitations explicitly mentioned by the authors.
-
-Then, if appropriate, provide additional limitations
-as:
-
-"Inferred limitation"
-
-Do not present inferred limitations as author claims.
-
-----------------------------------------------------------
-XII. FUTURE WORK
-----------------------------------------------------------
-
-List future work explicitly stated in the paper.
-
-Clearly distinguish:
-
-"Author-stated future work"
-
-from:
-
-"Proposed research direction"
-
-Do not present your own suggestions as if they came
-from the authors.
-
-----------------------------------------------------------
-XIII. CONCLUSION
-----------------------------------------------------------
-
-Write a strong academic conclusion covering:
-
-- Problem
-- Method
-- Findings
-- Contribution
-- Limitations
-- Future direction
-
-Only use supported information.
-
-----------------------------------------------------------
-REFERENCES
-----------------------------------------------------------
-
-CRITICAL:
-
-Use ONLY references explicitly contained in the provided
-paper context.
-
-Do NOT generate references from memory.
-
-Do NOT create fake citations.
-
-Do NOT invent:
-
-- Authors
-- Titles
-- Journals
-- Conferences
-- Years
-- DOI
-- URLs
-
-If a reference is incomplete, preserve the available
-information and write:
-
-"Reference details unavailable in the provided paper."
-
-If no references are present:
-
-"References not available in the provided paper."
-
-==========================================================
-SOURCE FIDELITY RULES
-==========================================================
-
-1. Use ONLY the provided research paper context.
-2. Never invent citations.
-3. Never invent references.
-4. Never invent datasets.
-5. Never invent dataset statistics.
-6. Never invent numerical results.
-7. Never invent authors.
-8. Never invent institutions.
-9. Never invent hardware.
-10. Never invent software.
-11. Never invent experiments.
-12. Never invent baselines.
-13. Never invent metrics.
-14. Never invent conclusions.
-15. Preserve numerical values exactly.
-16. Preserve technical terminology.
-17. Clearly identify missing information.
-18. Clearly distinguish author claims from inference.
-19. Clearly distinguish author-stated future work from
-    proposed future directions.
-20. Produce a complete report without stopping midway.
-
-==========================================================
-ACADEMIC STYLE
-==========================================================
-
-Use:
-
-- Formal academic English
-- IEEE-style section numbering
-- Clear technical terminology
-- Concise but complete explanations
-- Professional research-paper tone
-- Consistent formatting
-
-Do not add conversational commentary.
-
-Return ONLY the generated IEEE-style report.
+The user specifically requested the following research focus/query:
+"{query.strip()}"
+
+Direct your technical analysis, emphasis, and methodological breakdown
+towards addressing this specific research query while remaining completely
+faithful to the facts, evidence, and results in the uploaded paper context.
 """
 
-    return generate_answer(
-        context=context,
+    if not is_query_only:
+        question = f"""
+You are ResearchX, an expert senior IEEE Transactions editor, principal AI researcher,
+and peer-review chair.
+
+Your task is to convert and restructure the provided research paper content into a complete,
+authoritative, publication-grade IEEE Transactions research paper manuscript.
+
+==========================================================
+CORE IEEE STRUCTURING PRINCIPLES
+==========================================================
+1. SOURCE CONTENT vs. IEEE TEMPLATE:
+   The uploaded PDF is ONLY the source of factual research content, NOT the formatting template.
+   Even if the uploaded PDF:
+   - is not in IEEE format,
+   - uses a medical, physics, or alternative journal format,
+   - is a single-column or unformatted preprint document,
+   - uses different section names or lacks standard academic sections,
+   - has disorganized or fragmented text,
+   You MUST actively reorganize and synthesize the extracted facts into the strict, official
+   IEEE Transactions manuscript structure defined below.
+
+2. MISSING SECTIONS & SECTION RESTRUCTURING:
+   Creating missing standard IEEE sections based on available content is REQUIRED:
+   - If limitations are scattered or unheaded, group them under "VII. LIMITATIONS & RESEARCH GAPS".
+   - If datasets or split ratios are mentioned casually in the text, organize them under "V. EXPERIMENTAL SETUP & DATASETS".
+   - If baseline models and ablation numbers appear throughout the text, assemble them into the Markdown comparative table in "VI. RESULTS AND DISCUSSION".
+
+3. ZERO FABRICATION / ZERO HALLUCINATION RULE:
+   - While you MUST restructure existing facts into the IEEE format, you must NEVER fabricate or hallucinate
+     fake metrics, fake benchmark scores, fake hardware, or fake author identities.
+   - If specific details (e.g., exact hardware configuration, learning rate, dataset split numbers)
+     are absent from the source paper, explicitly state:
+     "Not specified in the provided paper."
+
+{query_focus_directive}
+
+==========================================================
+REQUIRED IEEE MANUSCRIPT STRUCTURE
+==========================================================
+Generate the report using the following EXACT structure:
+
+# {doc_title}
+
+**Authors:** [Authors from paper context; if absent, state 'ResearchX Academic Working Group']
+**Affiliation:** [Department, University / Research Institute from paper context; or 'Department of Artificial Intelligence & Autonomous Systems, ResearchX Academic Platform']
+**Correspondence:** [Corresponding author email/contact or 'academic-repository@researchx.org']
+
+---
+
+### ABSTRACT
+A comprehensive, high-density 150-250 word academic abstract written as a single cohesive paragraph.
+It must explicitly outline:
+(1) The underlying research problem and scientific urgency,
+(2) The core proposed methodology and architectural framework,
+(3) The primary quantitative and qualitative benchmark findings, and
+(4) The overarching scientific takeaway and domain significance.
+Do NOT use bullet points in the abstract.
+
+**Index Terms**—[Provide 4 to 6 authoritative IEEE Index Terms separated by semicolons, e.g., Deep Learning; Natural Language Processing; Transformer Architecture; Representation Learning]
+
+---
+
+## I. INTRODUCTION
+Provide an in-depth academic introduction:
+### A. Background & Industrial Motivation
+Contextualize the domain challenge, scientific relevance, and why existing systems struggle.
+### B. Problem Formulation & Scope
+Mathematically or conceptually define the specific obstacle addressed.
+### C. Research Objectives & Key Contributions
+Enumerate the technical, theoretical, and empirical contributions of this work in clear bullet points.
+### D. Paper Organization
+A concluding paragraph stating: "The remainder of this paper is organized as follows: Section II surveys related work. Section III formalizes the problem statement and objectives. Section IV presents the proposed methodology and system architecture. Section V outlines the experimental setup and datasets. Section VI analyzes empirical results and discussion. Section VII addresses limitations and research gaps, and Section VIII concludes the paper with future research directions."
+
+## II. RELATED WORK
+A rigorous comparative review of prior work and state-of-the-art baselines discussed in the paper:
+### A. Theoretical Foundations & Prior Paradigms
+Group related works by paradigm or methodology.
+### B. Limitations of Existing Approaches
+Highlight specific bottlenecks and computational or architectural weaknesses of prior methods.
+### C. Differentiating Novelty
+Articulate the precise differentiating factors and competitive edge of the current paper.
+
+## III. PROBLEM STATEMENT & OBJECTIVES
+Formal mathematical and conceptual specification of the investigated problem:
+### A. Mathematical Formulation & System Model
+Define symbols, inputs, outputs, and formal objective constraints. Include clean LaTeX equations ($$ ... $$) for optimization objectives.
+### B. Research Hypotheses & Design Goals
+Detail the operational criteria and expected bounds targeted by the system.
+
+## IV. METHODOLOGY & SYSTEM ARCHITECTURE
+An exhaustive, step-by-step technical breakdown of the system:
+### A. Architectural Framework Overview
+Explain the end-to-end framework, processing modules, and data flow.
+### B. Algorithmic Mechanics & Formulation
+Detail the core algorithms, loss functions, optimization objectives, or mathematical transformations used.
+Format all equations with clean LaTeX notation:
+$$L_{{total}} = L_{{task}} + \lambda \Omega(\theta)$$
+### C. Feature Extraction & Data Transformation Pipeline
+Explain how inputs are ingested, preprocessed, vectorized, and transformed into representations.
+
+## V. EXPERIMENTAL SETUP & DATASETS
+Comprehensive documentation of the empirical evaluation protocol:
+### A. Benchmark Datasets & Characteristics
+Detail dataset names, domains, sample sizes, feature dimensions, and train/validation/test splits. If not specified, state "Not specified in the provided paper."
+### B. Baseline Architectures & Comparative Models
+Detail baseline methods evaluated against.
+### C. Implementation & Hardware Environment
+Compute accelerators (GPUs/CPUs), framework (PyTorch/TensorFlow), optimization hyperparameters (learning rate, batch size, epochs), if reported.
+### D. Evaluation Metrics
+Formal definitions and formulas for metrics employed (Accuracy, Precision, Recall, F1-score, BLEU, ROUGE, Latency, Loss, etc.).
+
+## VI. RESULTS AND DISCUSSION
+A detailed empirical evaluation presenting the paper's findings:
+### A. Quantitative Benchmark Performance
+Include a well-structured **Markdown Comparative Table** summarizing key quantitative findings against baselines.
+Format:
+TABLE I: COMPARATIVE BENCHMARK EVALUATION
+| Model / Configuration | Primary Metric (Accuracy/F1) | Secondary Metric (Latency/PPL) | Notes / Observations |
+| :--- | :--- | :--- | :--- |
+| [Baseline Model] | [Score] | [Score] | [Observation] |
+| [Proposed System] | [Score] | [Score] | [Observation] |
+
+(Preserve every reported number and percentage with absolute fidelity.)
+
+### B. Ablation Studies & Sensitivity Analysis
+Detail the effect of individual components, hyperparameter variations, or architectural modules.
+### C. Qualitative Analysis & Error Breakdown
+Discuss observed error modes, edge cases, and unexpected behaviors observed.
+
+## VII. LIMITATIONS & RESEARCH GAPS
+A critical, objective academic appraisal:
+### A. Computational Complexity & Scaling Bottlenecks
+Memory footprints, training costs, and inference latency constraints.
+### B. Threats to Validity & Generalizability
+Domain-shift sensitivities, dataset biases, and edge-case failure modes.
+
+## VIII. CONCLUSION & FUTURE WORK
+### A. Synthesis of Findings
+Summarize whether the empirical evidence successfully validates the core thesis.
+### B. Actionable Future Directions
+Concrete, actionable research avenues for future investigators (e.g., multimodality, quantization, few-shot adaptation).
+
+## REFERENCES
+Numbered IEEE-formatted references corresponding strictly to citations in the paper context:
+[1] Author Names, "Paper Title," in *Journal/Conference Name*, vol. X, no. Y, pp. Z, Year.
+[2] ...
+(Include authentic citations from the context. If full bibliography details are truncated in the context, list available references accurately without inventing fake DOIs or authors.)
+
+==========================================================
+TONE AND FORMAT REQUIREMENTS
+==========================================================
+- Produce formal, third-person IEEE academic English.
+- Use Roman numeral section numbering (## I. INTRODUCTION through ## VIII. CONCLUSION & FUTURE WORK, and ## REFERENCES).
+- Use lettered subsection headings (### A., ### B., etc.).
+- Do NOT include conversational greetings, markdown commentary, or concluding meta-notes.
+- Return ONLY the full IEEE manuscript.
+"""
+    else:
+        # Query-Only Mode: Generate a comprehensive IEEE-style academic research report on the topic query
+        question = f"""
+You are ResearchX, an expert senior IEEE Transactions editor, principal AI researcher,
+and peer-review chair.
+
+The user has requested an authoritative, comprehensive IEEE Transactions research report on the following topic:
+"{query.strip()}"
+
+Your task is to write a complete, publication-grade IEEE research paper manuscript synthesizing
+the state of the art, theoretical formulations, architectural paradigms, empirical benchmarks,
+and open challenges in this domain.
+
+==========================================================
+REQUIRED IEEE MANUSCRIPT STRUCTURE
+==========================================================
+Generate the report using the following EXACT structure:
+
+# {doc_title}
+
+**Authors:** ResearchX Academic Working Group
+**Affiliation:** Department of Artificial Intelligence & Autonomous Systems, ResearchX Academic Platform
+**Correspondence:** contact@researchx.academic.org
+
+---
+
+### ABSTRACT
+A comprehensive, high-density 150-250 word academic abstract written as a single cohesive paragraph.
+It must explicitly outline:
+(1) The underlying research problem and scientific urgency,
+(2) The state-of-the-art methodology and architectural landscape,
+(3) Benchmark standards and comparative performance characteristics, and
+(4) The overarching scientific takeaway and domain significance.
+Do NOT use bullet points in the abstract.
+
+**Index Terms**—[Provide 4 to 6 authoritative IEEE Index Terms separated by semicolons, e.g., Machine Learning; Deep Neural Networks; Representation Learning; Empirical Evaluation]
+
+---
+
+## I. INTRODUCTION
+Provide an in-depth academic introduction:
+### A. Background & Industrial Motivation
+Contextualize the domain challenge and why this research area is of paramount importance.
+### B. Problem Formulation & Scope
+Mathematically or conceptually define the core challenges in this domain.
+### C. Research Objectives & Key Contributions
+Enumerate the primary dimensions of analysis synthesized in this manuscript in clear bullet points.
+### D. Paper Organization
+A concluding paragraph outlining Sections II through VIII.
+
+## II. RELATED WORK
+A rigorous comparative review of seminal works and state-of-the-art baselines:
+### A. Theoretical Foundations & Prior Paradigms
+### B. Architectural Bottlenecks & Limitations
+### C. Recent Breakthroughs & Emerging Directions
+
+## III. PROBLEM STATEMENT & OBJECTIVES
+### A. Mathematical Formulation & System Model
+Include formal objective constraints and clean LaTeX equations ($$ ... $$).
+### B. Research Hypotheses & Optimization Goals
+
+## IV. METHODOLOGY & SYSTEM ARCHITECTURE
+### A. Foundational Architecture Overview
+Detailed breakdown of prevailing model structures, attention mechanisms, or algorithmic pipelines.
+### B. Algorithmic Mechanics & Loss Functions
+Provide explicit mathematical formulations with clean LaTeX equations:
+$$L_{{objective}} = \mathbb{{E}}_{{x \sim p_{{data}}}} [-\log p_\theta(x)]$$
+### C. Processing Pipeline & Parameter Optimization
+
+## V. EXPERIMENTAL SETUP & DATASETS
+### A. Standard Benchmark Datasets
+Document the standard evaluation benchmarks, sample sizes, and modality splits in this domain.
+### B. State-of-the-Art Baseline Architectures
+### C. Standard Evaluation Metrics
+Formal definitions of primary performance metrics (e.g., F1-Score, BLEU, Perplexity, Throughput).
+
+## VI. RESULTS AND DISCUSSION
+### A. Comparative Benchmark Synthesis
+Include a comprehensive Markdown comparative table summarizing representative literature benchmarks:
+TABLE I: COMPARATIVE BENCHMARK EVALUATION OF PREVAILING ARCHITECTURES
+| Paradigm / Model | Key Dataset | Benchmark Metric | Latency / Complexity | Primary Trade-Off |
+| :--- | :--- | :--- | :--- | :--- |
+| Baseline Paradigm | Standard Benchmark | Representative Score | Moderate | Scaling Constraints |
+| Advanced Paradigm | Standard Benchmark | Representative Score | High Throughput | Compute Requirements |
+
+### B. Ablation & Architectural Trade-offs
+### C. Empirical Insights & Cross-domain Performance
+
+## VII. LIMITATIONS & RESEARCH GAPS
+### A. Computational & Energy Bottlenecks
+### B. Generalization Failures & Robustness Challenges
+
+## VIII. CONCLUSION & FUTURE WORK
+### A. Synthesis of Findings
+### B. High-Priority Future Research Directions
+
+## REFERENCES
+Numbered IEEE-formatted references corresponding to foundational and state-of-the-art literature in this domain:
+[1] Author Names, "Paper Title," in *Journal/Conference Name*, vol. X, no. Y, pp. Z, Year.
+[2] ...
+
+==========================================================
+TONE AND FORMAT REQUIREMENTS
+==========================================================
+- Produce formal, third-person IEEE academic English.
+- Use Roman numeral section numbering (## I. INTRODUCTION through ## VIII. CONCLUSION & FUTURE WORK, and ## REFERENCES).
+- Use lettered subsection headings (### A., ### B., etc.).
+- Do NOT include conversational greetings, markdown commentary, or concluding notes.
+- Return ONLY the full IEEE manuscript.
+"""
+
+    raw_output = generate_answer(
+        context=context or f"Research Domain Topic: {query}",
         question=question,
     )
+
+    return clean_report_output(raw_output)
 
 
 # ==========================================================
