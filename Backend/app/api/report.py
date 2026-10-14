@@ -1,14 +1,20 @@
+import hashlib
+import json
 import os
 import re
-from typing import Optional
-from fastapi import APIRouter, HTTPException
+import tempfile
+from typing import Optional, Dict, Any
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from app.auth.jwt_handler import get_optional_user
+from app.services.activity_service import log_user_activity
 from app.database.chroma import collection
 from app.agents.coordinator import load_context_for_paper
 from app.agents.report_agent import generate_ieee_report
 from app.services.pdf_report import build_ieee_pdf_from_markdown, generate_ieee_pdf
+
 
 router = APIRouter(
     prefix="/report",
@@ -24,6 +30,7 @@ class ReportRequest(BaseModel):
     )
     query: Optional[str] = None
     content: Optional[str] = None
+    force_refresh: Optional[bool] = False
 
 
 class ReportResponse(BaseModel):
@@ -31,6 +38,8 @@ class ReportResponse(BaseModel):
     message: str
     paper_name: str
     result: str
+    plagiarism: Optional[Dict[str, Any]] = None
+    edit_summary: Optional[str] = None
 
 
 @router.post(
@@ -39,18 +48,63 @@ class ReportResponse(BaseModel):
 )
 def generate_report(
     request: ReportRequest,
+    request_http: Request = None,
 ):
+
     try:
         is_query_mode = request.paper_name.lower().strip() in (
             "query_focus", "query focus", "topic", "none", ""
         ) or not request.paper_name.strip()
+
+        # ----------------------------------------
+        # Cache Management
+        # ----------------------------------------
+        cache_dir = os.path.join(tempfile.gettempdir(), "researchx_cache")
+        os.makedirs(cache_dir, exist_ok=True)
+
+        safe_cache_name = "".join(
+            c for c in request.paper_name if c.isalnum() or c in ("-", "_", ".")
+        ).strip()
+        query_slug = ""
+        if request.query and request.query.strip():
+            q_hash = hashlib.md5(request.query.strip().lower().encode("utf-8")).hexdigest()[:8]
+            query_slug = f"_{q_hash}"
+        cache_file = os.path.join(cache_dir, f"report_{safe_cache_name}{query_slug}.md")
+        cache_audit_file = os.path.join(cache_dir, f"report_{safe_cache_name}{query_slug}_audit.json")
+
+        if not request.force_refresh and os.path.exists(cache_file):
+            try:
+                with open(cache_file, "r", encoding="utf-8") as f:
+                    cached_report = f.read()
+                    if cached_report and len(cached_report.strip()) > 100:
+                        cached_audit = None
+                        cached_edit_summary = None
+                        if os.path.exists(cache_audit_file):
+                            try:
+                                with open(cache_audit_file, "r", encoding="utf-8") as af:
+                                    audit_payload = json.load(af)
+                                    cached_audit = audit_payload.get("plagiarism")
+                                    cached_edit_summary = audit_payload.get("edit_summary")
+                            except Exception as af_err:
+                                print(f"[Report Audit Cache Read Error]: {af_err}")
+                        effective_name = request.paper_name if not is_query_mode else (request.query or "Research_Report")
+                        return ReportResponse(
+                            success=True,
+                            message="IEEE Report loaded from cache",
+                            paper_name=effective_name,
+                            result=cached_report,
+                            plagiarism=cached_audit,
+                            edit_summary=cached_edit_summary,
+                        )
+            except Exception as cache_read_err:
+                print(f"[Report Cache Read Error]: {cache_read_err}")
 
         context = ""
         if not is_query_mode:
             # Load comprehensive paper text from MongoDB / disk context cache
             context = load_context_for_paper(
                 paper_name=request.paper_name,
-                query=request.query or "methodology results datasets experiments literature",
+                query=request.query or "",
             )
 
             # Fallback to ChromaDB if paper context was not in MongoDB or disk
@@ -97,20 +151,59 @@ def generate_report(
                     detail=f"Research paper '{request.paper_name}' not found and no research query provided.",
                 )
 
-        report = generate_ieee_report(
+        gen_result = generate_ieee_report(
             context=context,
             paper_name=request.paper_name,
             query=request.query,
+            return_audit=True,
         )
 
+        if isinstance(gen_result, tuple):
+            report, plagiarism_audit, edit_summary = gen_result
+        else:
+            report = gen_result
+            plagiarism_audit = None
+            edit_summary = None
+
         effective_name = request.paper_name if not is_query_mode else (request.query or "Research_Report")
+
+        # Save to disk cache
+        try:
+            with open(cache_file, "w", encoding="utf-8") as f:
+                f.write(report)
+            if plagiarism_audit is not None or edit_summary is not None:
+                with open(cache_audit_file, "w", encoding="utf-8") as af:
+                    json.dump({"plagiarism": plagiarism_audit, "edit_summary": edit_summary}, af, indent=2)
+        except Exception as cache_write_err:
+            print(f"[Report Cache Write Error]: {cache_write_err}")
+
+        # Log user activity if authenticated
+        try:
+            user = get_optional_user(request_http)
+            if user:
+                log_user_activity(
+                    user_id=user["user_id"],
+                    user_email=user["email"],
+                    action_name="IEEE Report",
+                    activity_type="report",
+                    topic=request.query,
+                    paper_name=effective_name,
+                    agent="IEEE Report Agent",
+                    status="Completed",
+                    details=f"Generated IEEE report for {effective_name}",
+                )
+        except Exception as act_err:
+            print(f"[Report Activity Log Error]: {act_err}")
 
         return ReportResponse(
             success=True,
             message="IEEE Report generated successfully",
             paper_name=effective_name,
             result=report,
+            plagiarism=plagiarism_audit,
+            edit_summary=edit_summary,
         )
+
 
     except HTTPException:
         raise
@@ -136,33 +229,55 @@ def export_report_pdf(
         if request.content and request.content.strip():
             report_markdown = request.content.strip()
         else:
-            # Fallback: Load context and generate if content was not supplied
-            context = load_context_for_paper(
-                paper_name=request.paper_name,
-                query=request.query or "methodology results datasets experiments literature",
-            )
+            # Check disk cache first before expensive reload or generation
+            cache_dir = os.path.join(tempfile.gettempdir(), "researchx_cache")
+            safe_cache_name = "".join(
+                c for c in request.paper_name if c.isalnum() or c in ("-", "_", ".")
+            ).strip()
+            query_slug = ""
+            if request.query and request.query.strip():
+                q_hash = hashlib.md5(request.query.strip().lower().encode("utf-8")).hexdigest()[:8]
+                query_slug = f"_{q_hash}"
+            cache_file = os.path.join(cache_dir, f"report_{safe_cache_name}{query_slug}.md")
 
-            if not context or len(context.strip()) < 50:
+            cached_report = None
+            if os.path.exists(cache_file):
                 try:
-                    from sentence_transformers import SentenceTransformer
-                    model = SentenceTransformer("all-MiniLM-L6-v2", local_files_only=True)
-                    embedding = model.encode(request.query or "methodology results datasets experiments").tolist()
-                    results = collection.query(
-                        query_embeddings=[embedding],
-                        n_results=15,
-                        where={"paper_name": request.paper_name} if request.paper_name else None,
-                    )
-                    documents = results.get("documents", [[]])[0]
-                    if documents:
-                        context = "\n\n".join(documents)
+                    with open(cache_file, "r", encoding="utf-8") as f:
+                        cached_report = f.read()
                 except Exception:
                     pass
 
-            report_markdown = generate_ieee_report(
-                context=context,
-                paper_name=request.paper_name,
-                query=request.query,
-            )
+            if cached_report and len(cached_report.strip()) > 100:
+                report_markdown = cached_report
+            else:
+                # Fallback: Load context and generate if content was not supplied
+                context = load_context_for_paper(
+                    paper_name=request.paper_name,
+                    query=request.query or "",
+                )
+
+                if not context or len(context.strip()) < 50:
+                    try:
+                        from sentence_transformers import SentenceTransformer
+                        model = SentenceTransformer("all-MiniLM-L6-v2", local_files_only=True)
+                        embedding = model.encode(request.query or "methodology results datasets experiments").tolist()
+                        results = collection.query(
+                            query_embeddings=[embedding],
+                            n_results=15,
+                            where={"paper_name": request.paper_name} if request.paper_name else None,
+                        )
+                        documents = results.get("documents", [[]])[0]
+                        if documents:
+                            context = "\n\n".join(documents)
+                    except Exception:
+                        pass
+
+                report_markdown = generate_ieee_report(
+                    context=context,
+                    paper_name=request.paper_name,
+                    query=request.query,
+                )
 
         # 3. Compile Two-Column IEEE PDF
         paper_clean = request.paper_name if (request.paper_name and request.paper_name.lower().strip() not in ("query_focus", "query focus")) else (request.query or "IEEE_Research_Report")

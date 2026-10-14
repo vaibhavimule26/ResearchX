@@ -26,7 +26,11 @@ import {
   getPapers,
   generatePresentation as generatePresentationAPI,
   exportPPTX,
+  agentExecutionManager,
+  AgentCancelledError,
 } from "@/lib/api";
+import { AgentEvaluationCard } from "@/components/dashboard/agent-evaluation-card";
+
 
 export const Route = createFileRoute("/dashboard/ppt")({
   head: () => ({
@@ -261,6 +265,12 @@ function PPTPage() {
     loadPapers();
   }, []);
 
+  useEffect(() => {
+    return () => {
+      agentExecutionManager.stop("ppt");
+    };
+  }, []);
+
   const handleGeneratePresentation = async () => {
     if (!selectedPaper || loading) return;
 
@@ -277,7 +287,10 @@ function PPTPage() {
       }
 
       setPresentation(response.presentation);
-    } catch (err) {
+    } catch (err: any) {
+      if (err instanceof AgentCancelledError || err?.name === "AbortError") {
+        return;
+      }
       setError(
         err instanceof Error ? err.message : "Presentation generation failed"
       );
@@ -332,6 +345,87 @@ function PPTPage() {
   );
 
   const activeSlide = parsedSlides[currentSlideIndex] || parsedSlides[0];
+
+  const slideFit = useMemo(() => {
+    if (!activeSlide) {
+      return {
+        padding: "p-5 sm:p-7 md:p-8",
+        titleSize: "text-lg sm:text-2xl",
+        takeawaySize: "text-xs sm:text-sm",
+        bulletSize: "text-xs sm:text-sm",
+        bulletSpacing: "space-y-3",
+        bulletDot: "h-2 w-2 mt-1.5",
+        useTwoColumns: false,
+      };
+    }
+
+    const items = activeSlide.content || [];
+    const count = items.length;
+    const totalChars =
+      items.reduce((acc, c) => acc + (c?.length || 0), 0) +
+      (activeSlide.title?.length || 0);
+
+    const isTitleSlide = activeSlide.id === 1;
+    const useTwoColumns = !isTitleSlide && count >= 4;
+
+    if (count <= 2 && totalChars < 220) {
+      return {
+        padding: "p-6 sm:p-8 md:p-9",
+        titleSize: "text-xl sm:text-2xl md:text-[26px]",
+        takeawaySize: "text-sm sm:text-base",
+        bulletSize: "text-sm sm:text-base md:text-[16px]",
+        bulletSpacing: "space-y-4 sm:space-y-5",
+        bulletDot: "h-2.5 w-2.5 mt-2",
+        useTwoColumns: false,
+      };
+    }
+
+    if (count <= 3 && totalChars < 340) {
+      return {
+        padding: "p-5 sm:p-7 md:p-8",
+        titleSize: "text-lg sm:text-xl md:text-2xl",
+        takeawaySize: "text-xs sm:text-sm md:text-base",
+        bulletSize: "text-xs sm:text-sm md:text-[15px]",
+        bulletSpacing: "space-y-3 sm:space-y-4",
+        bulletDot: "h-2 w-2 mt-1.5",
+        useTwoColumns: false,
+      };
+    }
+
+    if (useTwoColumns) {
+      return {
+        padding: "p-4 sm:p-6 md:p-7",
+        titleSize: "text-base sm:text-lg md:text-xl",
+        takeawaySize: "text-xs sm:text-sm line-clamp-1",
+        bulletSize: "text-xs sm:text-[13.5px]",
+        bulletSpacing: "space-y-2.5",
+        bulletDot: "h-1.5 w-1.5 mt-1.5",
+        useTwoColumns: true,
+      };
+    }
+
+    if (count >= 5 || totalChars > 450) {
+      return {
+        padding: "p-4 sm:p-5 md:p-6",
+        titleSize: "text-base sm:text-lg md:text-xl",
+        takeawaySize: "text-[11px] sm:text-xs line-clamp-1",
+        bulletSize: "text-[11.5px] sm:text-xs md:text-[13px]",
+        bulletSpacing: "space-y-1.5 sm:space-y-2",
+        bulletDot: "h-1.5 w-1.5 mt-1",
+        useTwoColumns: false,
+      };
+    }
+
+    return {
+      padding: "p-5 sm:p-7 md:p-8",
+      titleSize: "text-lg sm:text-xl md:text-2xl",
+      takeawaySize: "text-xs sm:text-sm",
+      bulletSize: "text-xs sm:text-sm md:text-[14.5px]",
+      bulletSpacing: "space-y-2.5 sm:space-y-3",
+      bulletDot: "h-2 w-2 mt-1.5",
+      useTwoColumns: false,
+    };
+  }, [activeSlide]);
 
   return (
     <div className="min-w-0 space-y-6">
@@ -570,7 +664,7 @@ function PPTPage() {
             {/* Right Column: Active 16:9 Presentation Canvas (8 cols) */}
             {activeSlide && (
               <div className="lg:col-span-8 space-y-4">
-                <div className="relative aspect-[16/9] w-full rounded-2xl border border-border/70 bg-card dark:bg-gradient-to-br dark:from-[#0F1420] dark:via-[#0B0F17] dark:to-[#121927] p-6 sm:p-10 shadow-2xl backdrop-blur-xl flex flex-col justify-between overflow-hidden">
+                <div className={`relative aspect-[16/9] w-full min-h-[360px] max-h-[540px] rounded-2xl border border-border/70 bg-card dark:bg-gradient-to-br dark:from-[#0F1420] dark:via-[#0B0F17] dark:to-[#121927] ${slideFit.padding} shadow-2xl backdrop-blur-xl flex flex-col justify-between overflow-hidden transition-all duration-150`}>
                   {/* IEEE Top Header Accent Bar */}
                   <div className="absolute top-0 left-0 right-0 h-1.5 gradient-primary-bg" />
 
@@ -586,12 +680,12 @@ function PPTPage() {
                       </span>
                     </div>
 
-                    <h3 className="text-lg sm:text-2xl font-display font-bold text-foreground tracking-tight">
+                    <h3 className={`${slideFit.titleSize} font-display font-bold text-foreground tracking-tight leading-snug`}>
                       {activeSlide.title}
                     </h3>
 
                     {activeSlide.takeaway && (
-                      <p className="mt-1 text-xs sm:text-sm text-muted-foreground italic line-clamp-2">
+                      <p className={`mt-1 ${slideFit.takeawaySize} text-muted-foreground italic line-clamp-2`}>
                         <span className="font-semibold text-primary not-italic">Key Takeaway: </span>
                         {activeSlide.takeaway}
                       </p>
@@ -599,20 +693,52 @@ function PPTPage() {
                   </div>
 
                   {/* Slide Content Bullets */}
-                  <div className="my-auto space-y-3 py-3">
-                    {activeSlide.content.map((point, pIdx) => (
-                      <div
-                        key={pIdx}
-                        className="flex items-start gap-3 text-xs sm:text-sm text-foreground/90 leading-relaxed"
-                      >
-                        <span className="h-2 w-2 rounded-full gradient-primary-bg shrink-0 mt-1.5 shadow-sm" />
-                        <div className="flex-1 leading-normal">{renderBulletText(point)}</div>
+                  {slideFit.useTwoColumns ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 my-auto py-1">
+                      <div className="rounded-xl border border-border/40 bg-secondary/25 dark:bg-card/40 p-3 sm:p-3.5 space-y-2.5 shadow-sm">
+                        <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-primary">
+                          {activeSlide.id === 1 ? "Research Identity" : "Technical Formulation & Challenges"}
+                        </div>
+                        <div className={slideFit.bulletSpacing}>
+                          {activeSlide.content.slice(0, Math.ceil(activeSlide.content.length / 2)).map((point, pIdx) => (
+                            <div key={pIdx} className={`flex items-start gap-2.5 ${slideFit.bulletSize} text-foreground/90 leading-relaxed`}>
+                              <span className={`${slideFit.bulletDot} rounded-full gradient-primary-bg shrink-0 shadow-sm`} />
+                              <div className="flex-1 leading-normal">{renderBulletText(point)}</div>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                    ))}
-                  </div>
+
+                      <div className="rounded-xl border border-border/40 bg-secondary/25 dark:bg-card/40 p-3 sm:p-3.5 space-y-2.5 shadow-sm">
+                        <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-sky-400">
+                          {activeSlide.id === 1 ? "Target Venue & Scope" : "Proposed Objectives & Deliverables"}
+                        </div>
+                        <div className={slideFit.bulletSpacing}>
+                          {activeSlide.content.slice(Math.ceil(activeSlide.content.length / 2)).map((point, pIdx) => (
+                            <div key={pIdx} className={`flex items-start gap-2.5 ${slideFit.bulletSize} text-foreground/90 leading-relaxed`}>
+                              <span className={`${slideFit.bulletDot} rounded-full bg-sky-500 shrink-0 shadow-sm`} />
+                              <div className="flex-1 leading-normal">{renderBulletText(point)}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className={`my-auto ${slideFit.bulletSpacing} py-2`}>
+                      {activeSlide.content.map((point, pIdx) => (
+                        <div
+                          key={pIdx}
+                          className={`flex items-start gap-3 ${slideFit.bulletSize} text-foreground/90 leading-relaxed`}
+                        >
+                          <span className={`${slideFit.bulletDot} rounded-full gradient-primary-bg shrink-0 shadow-sm`} />
+                          <div className="flex-1 leading-normal">{renderBulletText(point)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Slide Footer */}
-                  <div className="flex items-center justify-between text-[10px] text-muted-foreground/60 border-t border-border/30 pt-3">
+                  <div className="flex items-center justify-between text-[10px] text-muted-foreground/60 border-t border-border/30 pt-2.5">
                     <span className="truncate max-w-[280px]">
                       {selectedPaper}
                     </span>
@@ -680,8 +806,17 @@ function PPTPage() {
               </div>
             )}
           </div>
+
+          {/* Scholarly Accuracy & Factuality Evaluation Card */}
+          <AgentEvaluationCard
+            agentName="ppt"
+            agentTitle="PPT Generator Agent"
+            outputText={presentation}
+            paperName={selectedPaper}
+          />
         </div>
       )}
+
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard, Sparkles, Search, Upload, MessageSquare, FileText,
   Lightbulb, Database, FlaskConical, BookOpen, FileSpreadsheet, Presentation,
-  History, Bookmark, Download, User, Settings, HelpCircle, LogOut, ChevronLeft,
+  History, Bookmark, User, Settings, HelpCircle, LogOut, ChevronLeft,
   Brain, Plus,
 } from "lucide-react";
 import { useState } from "react";
@@ -41,7 +41,6 @@ const GROUPS: { label: string; items: { to: string; label: string; icon: any; ba
     items: [
       { to: "/dashboard/history", label: "History", icon: History },
       { to: "/dashboard/projects", label: "Saved Projects", icon: Bookmark },
-      { to: "/dashboard/downloads", label: "Downloads", icon: Download },
     ],
   },
   {

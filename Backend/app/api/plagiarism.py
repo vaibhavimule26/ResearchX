@@ -1,11 +1,14 @@
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
+from app.auth.jwt_handler import get_optional_user
+from app.services.activity_service import log_user_activity
 from app.services.plagiarism_service import (
     analyze_paper_similarity,
     clear_plagiarism_cache,
 )
+
 
 router = APIRouter(
     prefix="/plagiarism",
@@ -69,6 +72,7 @@ class PlagiarismResponse(BaseModel):
 )
 def check_plagiarism(
     request: PlagiarismCheckRequest,
+    request_http: Request = None,
 ):
     """
     Analyze the uploaded PDF for plagiarism / text similarity against
@@ -81,11 +85,33 @@ def check_plagiarism(
             force_refresh=bool(request.force_refresh),
         )
 
+        # Log user activity if authenticated
+        try:
+            user = get_optional_user(request_http)
+            if user:
+                sim_score = result.get("similarity_score", 0) if isinstance(result, dict) else getattr(result, "similarity_score", 0)
+                matches_cnt = result.get("potential_matches_count", 0) if isinstance(result, dict) else getattr(result, "potential_matches_count", 0)
+                p_title = (result.get("filename") or result.get("title") or request.pdf_id) if isinstance(result, dict) else (getattr(result, "filename", None) or request.pdf_id)
+                log_user_activity(
+                    user_id=user["user_id"],
+                    user_email=user["email"],
+                    action_name="Plagiarism Check",
+                    activity_type="plagiarism",
+                    topic=None,
+                    paper_name=p_title,
+                    agent="Plagiarism Checker",
+                    status="Completed",
+                    details=f"Similarity: {sim_score}%, {matches_cnt} potential match(es)",
+                )
+        except Exception as act_err:
+            print(f"[Plagiarism Activity Log Error]: {act_err}")
+
         return PlagiarismResponse(
             success=True,
             message="Plagiarism analysis completed successfully",
             data=result,
         )
+
 
     except ValueError as val_err:
         raise HTTPException(

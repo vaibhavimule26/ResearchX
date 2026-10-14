@@ -1,3 +1,4 @@
+import re
 import concurrent.futures
 from typing import Any, Dict, List, Optional
 from app.llm.multi_api_router import (
@@ -7,6 +8,35 @@ from app.llm.multi_api_router import (
     call_openrouter_api,
 )
 from app.agents.coordinator import load_context_for_paper
+
+
+def strip_plagiarism_section(text: str) -> str:
+    """
+    Remove any Plagiarism & Originality Audit section, originality scores,
+    similarity risk, novelty overlap, academic integrity verdicts, or plagiarism-related analysis
+    from Summary Agent output while preserving all other summary sections.
+    """
+    if not text:
+        return ""
+    # Strip any section with heading containing Plagiarism, Originality, Similarity, Academic Integrity
+    cleaned = re.sub(
+        r'(?i)###\s*\d*\.?\s*(?:Plagiarism|Originality|Similarity|Academic\s*Integrity)\b[^\n]*\n[\s\S]*?(?=(?:\n###|\Z))',
+        '',
+        text,
+    )
+    # Strip any individual bullet points related to plagiarism, originality scores, similarity risk, or academic integrity verdict
+    cleaned = re.sub(
+        r'(?im)^\s*[-*]\s+\*\*(?:Estimated\s+Originality|Similarity\s+Risk|Novelty\s+vs|Academic\s+Integrity\s+Verdict|Textual\s+(?:&|and)\s+Conceptual\s+Authenticity|Textual\s+Uniqueness|Attribution\s+(?:&|and)\s+Paraphrasing)[^*]*\*\*:[^\n]*\n?',
+        '',
+        cleaned,
+    )
+    # If section 1 was removed and section 2 is now first, renumber 2,3,4 to 1,2,3
+    if re.search(r'^\s*###\s*2\.', cleaned):
+        cleaned = re.sub(r'###\s*2\.', '### 1.', cleaned)
+        cleaned = re.sub(r'###\s*3\.', '### 2.', cleaned)
+        cleaned = re.sub(r'###\s*4\.', '### 3.', cleaned)
+        cleaned = re.sub(r'###\s*5\.', '### 4.', cleaned)
+    return cleaned.strip()
 
 
 # ==========================================================
@@ -56,10 +86,6 @@ def summarize_paper(
     # Query vs. Standard Summary Prompt
     # ------------------------------------------------------
     q_clean = (query or "").strip().lower()
-    is_plagiarism_query = any(
-        k in q_clean
-        for k in ["plagiar", "similarity", "originality", "integrity", "authenticity", "copy"]
-    )
     is_custom_query = bool(
         q_clean
         and q_clean not in [
@@ -72,41 +98,9 @@ def summarize_paper(
         ]
     )
 
-    if is_plagiarism_query:
-        prompt = f"""You are ResearchX, an expert academic research intelligence and integrity assistant.
-Analyze the provided research paper context to perform a brief, concise, and systematic PLAGIARISM & ORIGINALITY AUDIT along with an executive summary.
-
-USER RESEARCH QUERY:
-"{query.strip()}"
-
-STRICT CITATION DIRECTIVE:
-- DO NOT include citations, bracketed numbers, section tags (e.g. [Sec. 1], [Table 1], [Eq. 1]), or bibliography lists. Citations are explicitly NOT needed.
-- Ground all findings strictly in the provided paper context. Be brief, concise, and systematic.
-
-FORMAT YOUR RESPONSE IN CLEAN MARKDOWN WITH THESE SECTIONS:
-
-### 1. Plagiarism & Originality Audit
-- **Estimated Originality / Similarity Risk:** Provide an explicit risk assessment (e.g., Low Similarity Risk — Estimated Originality: 90-95%) with brief rationale.
-- **Novelty vs. Prior Art Overlap:** Delineate genuine author innovations versus concepts, modules, or baselines adopted from existing academic literature.
-- **Textual Uniqueness & Phrasing:** Evaluate whether the paper demonstrates authentic, original scholarly formulation or exhibits signs of boilerplate, repetitive formulas, or copied phrasing.
-- **Attribution & Paraphrasing Integrity:** Check whether prior methods and benchmarks are properly framed rather than improperly claimed as the authors' own inventions.
-- **Academic Integrity Verdict:** A clear scholarly verdict on publication readiness, originality, and plagiarism risk.
-
-### 2. Executive Overview of Paper
-- **Core Problem Addressed:** Concise 1-2 sentence explanation of the limitation or bottleneck targeted by the paper.
-- **Proposed Solution & Architecture:** How the authors solve the problem and how the system operates.
-
-### 3. Key Findings & Empirical Benchmarks
-- **Evaluated Benchmarks & Models:** Datasets, task suites, and LLM backbones evaluated.
-- **Reported Outcomes:** Concrete quantitative performance metrics and accuracy gains reported.
-
-### 4. Core Contributions & Key Takeaways
-- **Main Contributions:** 2-3 bullet points highlighting the primary technical and practical innovations.
-- **Practical Takeaways:** The essential conclusions from the work.
-"""
-    elif is_custom_query:
+    if is_custom_query:
         prompt = f"""You are ResearchX, an expert academic research intelligence assistant.
-Provide a brief, concise, and systematic analysis of the provided research paper addressing the user's query, followed by an originality and plagiarism assessment.
+Provide a brief, concise, and systematic analysis of the provided research paper addressing the user's query.
 
 USER RESEARCH QUERY:
 "{query.strip()}"
@@ -132,16 +126,10 @@ A brief, systematic direct answer to the query with explicit paper evidence, wit
 ### 4. Critical Takeaways & Limitations
 - **Primary Advantages:** Key technical differentiators.
 - **Reported Limitations:** Computational overhead or boundary constraints acknowledged by authors.
-
-### 5. Plagiarism & Originality Audit
-- **Estimated Originality / Similarity Risk:** Explicit risk level and estimated originality percentage (e.g., Low Similarity Risk — Estimated Originality: 90-95%).
-- **Novelty vs. Prior Art Overlap:** Delineation of original mechanisms versus standard techniques adopted from prior literature.
-- **Textual & Conceptual Authenticity:** Assessment of whether the methodology and explanations are genuinely original scholarly prose.
-- **Academic Integrity Verdict:** Scholarly verdict evaluating proper framing of prior art and publication-grade originality.
 """
     else:
         prompt = """You are ResearchX, an expert academic research intelligence assistant.
-Provide a brief, concise, and systematic research summary of this paper using ONLY the supplied paper context, followed by an originality and plagiarism assessment.
+Provide a brief, concise, and systematic research summary of this paper using ONLY the supplied paper context.
 
 STRICT CITATION DIRECTIVE:
 - DO NOT include citations, bracketed numbers, section tags (e.g. [Sec. 1], [Table 1], [Eq. 1]), or bibliography lists. Citations are explicitly NOT needed.
@@ -165,12 +153,6 @@ FORMAT YOUR RESPONSE IN CLEAN MARKDOWN USING THESE SECTIONS:
 ### 4. Core Contributions & Takeaways
 - **Theoretical & Technical Innovations:** 2-3 concise bullet points highlighting primary contributions.
 - **Practical Takeaways:** Key practical conclusions from the work.
-
-### 5. Plagiarism & Originality Audit
-- **Estimated Originality / Similarity Risk:** Explicit risk level and estimated originality percentage (e.g., Low Similarity Risk — Estimated Originality: 90-95%).
-- **Novelty vs. Prior Art Overlap:** Delineation of original mechanisms versus standard techniques adopted from prior literature.
-- **Textual & Conceptual Authenticity:** Assessment of whether the methodology and explanations are genuinely original scholarly prose.
-- **Academic Integrity Verdict:** Scholarly verdict evaluating proper contextualization of prior art and publication-grade originality.
 """
 
     # ------------------------------------------------------
@@ -220,6 +202,7 @@ FORMAT YOUR RESPONSE IN CLEAN MARKDOWN USING THESE SECTIONS:
     cleaned = re.sub(r'\[[A-Z][a-zA-Z\s\.\-]+,\s*\d{4}[a-z]?\]', '', cleaned)
     cleaned = re.sub(r'\[\d+\]', '', cleaned)
     cleaned = re.sub(r'###\s*5?\.\s*Evidence\s*Map.*?(?=(###|$))', '', cleaned, flags=re.DOTALL | re.IGNORECASE)
+    cleaned = strip_plagiarism_section(cleaned)
     cleaned = cleaned.replace("\x00", "").replace("\ufffd", "—")
 
     # Ensure markdown headers have clean blank lines before them
@@ -303,6 +286,7 @@ STRICT RULES:
 
     import re
     cleaned = summary.strip()
+    cleaned = strip_plagiarism_section(cleaned)
     cleaned = cleaned.replace("\x00", "").replace("\ufffd", "—")
     cleaned = re.sub(r'([^\n])\n(#{1,6}\s+)', r'\1\n\n\2', cleaned)
     return cleaned.strip()

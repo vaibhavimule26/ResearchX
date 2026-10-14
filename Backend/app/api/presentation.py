@@ -1,10 +1,12 @@
 import os
 import tempfile
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from typing import Optional
 
+from app.auth.jwt_handler import get_optional_user
+from app.services.activity_service import log_user_activity
 from app.agents.coordinator import load_context_for_paper
 from app.agents.ppt_agent import generate_presentation
 
@@ -22,7 +24,9 @@ class PresentationRequest(BaseModel):
 @router.post("/generate")
 def generate_presentation_text(
     request: PresentationRequest,
+    request_http: Request = None,
 ):
+
     try:
         if not request.paper_name or not request.paper_name.strip():
             raise HTTPException(
@@ -76,10 +80,29 @@ def generate_presentation_text(
         with open(cache_file, "w", encoding="utf-8") as f:
             f.write(presentation)
 
+        # Log user activity if authenticated
+        try:
+            user = get_optional_user(request_http)
+            if user:
+                log_user_activity(
+                    user_id=user["user_id"],
+                    user_email=user["email"],
+                    action_name="Presentation (PPT)",
+                    activity_type="presentation",
+                    topic=None,
+                    paper_name=request.paper_name,
+                    agent="PowerPoint Agent",
+                    status="Completed",
+                    details=f"Generated presentation slides for {request.paper_name}",
+                )
+        except Exception as act_err:
+            print(f"[Presentation Activity Log Error]: {act_err}")
+
         return {
             "success": True,
             "presentation": presentation,
         }
+
 
     except HTTPException:
         raise

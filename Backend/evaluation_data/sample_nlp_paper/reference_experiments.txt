@@ -1,0 +1,4 @@
+1. Model Variants: Evaluated Transformer (base model: 6 encoder/decoder layers, d_model=512, d_ff=2048, 8 attention heads, 65M parameters) and Transformer (big model: 6 encoder/decoder layers, d_model=1024, d_ff=4096, 16 attention heads, 213M parameters).
+2. Training Setup: Trained on 8 NVIDIA P100 GPUs using Adam optimizer (beta1=0.9, beta2=0.98, epsilon=10^-9) with a learning rate warmup over 4,000 steps followed by inverse square root decay.
+3. Regularization: Employed residual dropout (P_drop=0.1), attention dropout, and label smoothing (epsilon_ls=0.1).
+4. Evaluation Metrics: Case-sensitive tokenized BLEU scores computed using multi-bleu.perl on newstest2014 test sets. Beam search with beam size of 4 and length penalty alpha=0.6.

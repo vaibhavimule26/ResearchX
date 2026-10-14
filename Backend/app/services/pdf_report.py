@@ -1,6 +1,6 @@
 import os
 import re
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import (
     BaseDocTemplate,
@@ -12,6 +12,7 @@ from reportlab.platypus import (
     NextPageTemplate,
     Table,
     TableStyle,
+    Image as RLImage,
 )
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.colors import HexColor
@@ -29,7 +30,17 @@ def sanitize_inline(text: str) -> str:
     if not text:
         return ""
 
-    s = str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    s = (
+        str(text)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("\ufffd", "-")
+        .replace("\u2018", "'")
+        .replace("\u2019", "'")
+        .replace("\u201c", '"')
+        .replace("\u201d", '"')
+    )
     s = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", s)
     s = re.sub(r"(?<!\*)\*([^*]+?)\*(?!\*)", r"<i>\1</i>", s)
     s = re.sub(r"`([^`]+)`", r"<font name='Courier'>\1</font>", s)
@@ -91,7 +102,7 @@ def on_later_pages(canvas, doc):
 def parse_markdown_to_ieee_story(
     markdown_text: str,
     paper_title: str = "Research Report",
-) -> List:
+) -> Tuple[List, int]:
     """
     Parse markdown into ReportLab Flowables structured for an official IEEE two-column paper.
     """
@@ -275,29 +286,37 @@ def parse_markdown_to_ieee_story(
 
     # Build Header Banner for Page 1 Top Frame
     clean_title = sanitize_inline(detected_title)
-    story.append(Paragraph(clean_title, title_style))
+    p_title = Paragraph(clean_title, title_style)
+    _, h_t = p_title.wrap(522, 1000)
+    story.append(p_title)
     story.append(Spacer(1, 4))
 
     if author_lines:
         author_text = "<br/>".join(
             sanitize_inline(al) for al in author_lines if al
         )
-        story.append(Paragraph(author_text, author_style))
+        p_author = Paragraph(author_text, author_style)
     else:
-        story.append(
-            Paragraph(
-                "<b>ResearchX Academic Working Group</b><br/>"
-                "<i>Department of Artificial Intelligence &amp; Autonomous Systems</i><br/>"
-                "ResearchX Academic Research Platform",
-                author_style,
-            )
+        p_author = Paragraph(
+            "<b>ResearchX Academic Working Group</b><br/>"
+            "<i>Department of Artificial Intelligence &amp; Autonomous Systems</i><br/>"
+            "ResearchX Academic Research Platform",
+            author_style,
         )
+    _, h_a = p_author.wrap(522, 1000)
+    story.append(p_author)
 
     # Move from Top Frame into Column 1
     story.append(FrameBreak())
 
+    # Dynamically determine title frame height so text never overflows or overlaps
+    needed_top_h = int(h_t + 4 + h_a + 16)
+    top_h = max(70, min(240, needed_top_h))
+
     # Pass 2: Parse Body lines into two columns
     in_abstract = False
+    abstract_has_label = False
+    in_code_block = False
     table_rows = []
     table_count = 0
     pending_table_caption = None
@@ -391,11 +410,11 @@ def parse_markdown_to_ieee_story(
             continue
 
         # Check for inline Abstract line: **Abstract**—... or Abstract: ...
-        abstract_inline_match = re.match(r"^\*?\*?Abstract\*?\*?[—\-:]\s*(.*)", line, re.IGNORECASE)
+        abstract_inline_match = re.match(r"^\*?\*?Abstract\*?\*?[—–\-:]\s*(.*)", line, re.IGNORECASE)
         if abstract_inline_match:
             abstract_body = abstract_inline_match.group(1).strip()
             if abstract_body:
-                clean_body = re.sub(r"^\*?\*?Abstract\*?\*?[—\-:\s]+", "", abstract_body, flags=re.IGNORECASE).strip()
+                clean_body = re.sub(r"^\*?\*?Abstract\*?\*?[—–\-:\s]+", "", abstract_body, flags=re.IGNORECASE).strip()
                 story.append(
                     Paragraph(
                         f"<b><i>Abstract</i>—</b>{sanitize_inline(clean_body or abstract_body)}",
@@ -411,12 +430,13 @@ def parse_markdown_to_ieee_story(
             or line.upper() == "ABSTRACT"
         ):
             in_abstract = True
+            abstract_has_label = False
             continue
 
         # Check for Index Terms
         if "Index Terms" in line or line.startswith("**Index Terms**"):
             in_abstract = False
-            terms_text = re.sub(r"^\*?\*?Index Terms\*?\*?[—\-:]\s*", "", line)
+            terms_text = re.sub(r"^\*?\*?Index Terms\*?\*?[—–\-:\s]+", "", line)
             story.append(
                 Paragraph(
                     f"<b><i>Index Terms</i>—</b>{sanitize_inline(terms_text)}",
@@ -427,15 +447,21 @@ def parse_markdown_to_ieee_story(
 
         # Abstract content
         if in_abstract:
-            clean_abstract = re.sub(r"^\*?\*?Abstract\*?\*?[—\-:\s]+", "", line, flags=re.IGNORECASE).strip()
-            story.append(
-                Paragraph(
-                    f"<b><i>Abstract</i>—</b>{sanitize_inline(clean_abstract)}",
-                    abstract_style,
-                )
-            )
-            in_abstract = False
-            continue
+            if line.startswith("#"):
+                in_abstract = False
+            else:
+                clean_abstract = re.sub(r"^\*?\*?Abstract\*?\*?[—–\-:\s]+", "", line, flags=re.IGNORECASE).strip()
+                if not abstract_has_label:
+                    story.append(
+                        Paragraph(
+                            f"<b><i>Abstract</i>—</b>{sanitize_inline(clean_abstract or line)}",
+                            abstract_style,
+                        )
+                    )
+                    abstract_has_label = True
+                else:
+                    story.append(Paragraph(sanitize_inline(line), abstract_style))
+                continue
 
         # Display math / equation block: $$...$$
         eq_match = re.match(r"^\$\$(.+?)\$\$$", line)
@@ -444,6 +470,66 @@ def parse_markdown_to_ieee_story(
             story.append(Spacer(1, 2))
             story.append(Paragraph(f"<i>{sanitize_inline(eq_text)}</i>", equation_style))
             story.append(Spacer(1, 2))
+            continue
+
+        # Code fence handling
+        if line.startswith("```"):
+            in_code_block = not in_code_block
+            continue
+
+        if in_code_block:
+            # Skip ASCII diagram art in PDF since publication-grade RLImage is rendered
+            if any(border_char in line for border_char in ["+---", "|  ", "───>", "┌───", "└───"]):
+                continue
+            code_line_style = ParagraphStyle(
+                "IEEECodeLine",
+                fontName="Courier",
+                fontSize=6.5,
+                leading=8.0,
+                textColor=DARK_TEXT,
+            )
+            story.append(Paragraph(sanitize_inline(line), code_line_style))
+            continue
+
+        # Markdown Image syntax: ![caption](url)
+        img_match = re.match(r"^!\[(.*?)\]\((.*?)\)$", line)
+        if img_match:
+            img_caption = img_match.group(1).strip()
+            raw_img_path = img_match.group(2).strip()
+
+            clean_rel = raw_img_path.lstrip("/").replace("\\", "/")
+            img_filename = os.path.basename(clean_rel)
+
+            curr_dir = os.path.dirname(os.path.abspath(__file__))
+            app_dir = os.path.dirname(curr_dir)
+            backend_dir = os.path.dirname(app_dir)
+            ws_root = os.path.dirname(backend_dir)
+
+            candidates = [
+                clean_rel,
+                os.path.join(ws_root, clean_rel),
+                os.path.join(backend_dir, clean_rel),
+                os.path.join(ws_root, "uploads", "generated_reports", img_filename),
+                os.path.join(backend_dir, "uploads", "generated_reports", img_filename),
+                os.path.join(ws_root, "uploads", img_filename),
+                os.path.join(backend_dir, "uploads", img_filename),
+            ]
+
+            resolved_img = None
+            for cand in candidates:
+                if os.path.exists(cand) and os.path.isfile(cand):
+                    resolved_img = cand
+                    break
+
+            if resolved_img:
+                try:
+                    story.append(Spacer(1, 4))
+                    # Column width is 252 pt. Image width 245 pt fits perfectly within column margins.
+                    # Aspect ratio 8.2:3.4 -> height = 245 * (3.4 / 8.2) ≈ 101.5 pt
+                    story.append(RLImage(resolved_img, width=245, height=102))
+                    story.append(Spacer(1, 2))
+                except Exception as img_err:
+                    print(f"[PDF Report] Failed to insert image {resolved_img}: {img_err}")
             continue
 
         # Figure caption (e.g. Fig. 1. System architecture or Figure 1: ...)
@@ -512,7 +598,7 @@ def parse_markdown_to_ieee_story(
         story.append(Paragraph(sanitize_inline(line), body_style))
 
 
-    return story
+    return story, top_h
 
 
 def build_ieee_pdf_from_markdown(
@@ -531,6 +617,11 @@ def build_ieee_pdf_from_markdown(
         ).strip().replace(" ", "_")
         output_path = f"uploads/generated_reports/{clean_name or 'paper'}_IEEE_Report.pdf"
 
+    story, top_h = parse_markdown_to_ieee_story(
+        markdown_text=markdown_content,
+        paper_title=title,
+    )
+
     doc = BaseDocTemplate(
         output_path,
         pagesize=letter,
@@ -540,11 +631,15 @@ def build_ieee_pdf_from_markdown(
         bottomMargin=54,
     )
 
-    top_h = 135
     # First Page: Top Banner + 2 columns below
+    # Mathematically exact clearance: Title top at 738, bottom at (738 - top_h).
+    # Column top at (724 - top_h), bottom at 54, guaranteeing a 14 pt clear separation gap.
+    title_y = 738 - top_h
+    col_h = 670 - top_h
+
     frame_title = Frame(
         45,
-        792 - 54 - top_h,
+        title_y,
         522,
         top_h,
         id="top",
@@ -557,7 +652,7 @@ def build_ieee_pdf_from_markdown(
         45,
         54,
         252,
-        792 - 54 - top_h - 15,
+        col_h,
         id="p1_c1",
         leftPadding=0,
         rightPadding=0,
@@ -568,7 +663,7 @@ def build_ieee_pdf_from_markdown(
         315,
         54,
         252,
-        792 - 54 - top_h - 15,
+        col_h,
         id="p1_c2",
         leftPadding=0,
         rightPadding=0,
@@ -611,12 +706,6 @@ def build_ieee_pdf_from_markdown(
     )
 
     doc.addPageTemplates([first_page_template, later_page_template])
-
-    story = parse_markdown_to_ieee_story(
-        markdown_text=markdown_content,
-        paper_title=title,
-    )
-
     doc.build(story)
     return output_path
 

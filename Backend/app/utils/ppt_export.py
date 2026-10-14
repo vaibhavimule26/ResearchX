@@ -132,9 +132,76 @@ def _split_lead_in(bullet: str) -> Tuple[str, str]:
     return "", bullet
 
 
-def _add_paragraph_runs(p, lead: str, body: str, bullet_color: RGBColor = COLOR_INDIGO, font_size: Pt = Pt(13.5)):
-    p.space_after = Pt(8)
-    p.line_spacing = 1.2
+def _trim_bullet_text(bullet: str, max_words: int = 26) -> str:
+    """
+    Ensure single bullet points do not become oversized paragraphs.
+    Preserves structured bold lead-in tags while trimming excessive run-on text.
+    """
+    lead, body = _split_lead_in(bullet)
+    words = body.split()
+    if len(words) > max_words:
+        body = " ".join(words[:max_words]).rstrip(",;:-.") + "..."
+    if lead:
+        return f"{lead}{body}"
+    return body
+
+
+def _calculate_adaptive_typography(
+    bullets: List[str],
+    max_available_height_inches: float = 3.95,
+) -> Tuple[Pt, Pt, float]:
+    """
+    Dynamically calculate optimal font size, paragraph spacing (space_after),
+    and line spacing to fit content naturally within the available card height,
+    preventing both text overflow and awkward empty space.
+    """
+    count = len(bullets)
+    total_chars = sum(len(b) for b in bullets)
+
+    if count <= 1:
+        if total_chars < 140:
+            return Pt(16.0), Pt(16), 1.35
+        elif total_chars < 220:
+            return Pt(14.5), Pt(14), 1.30
+        else:
+            return Pt(13.5), Pt(10), 1.22
+    elif count == 2:
+        if total_chars < 200:
+            return Pt(15.0), Pt(16), 1.32
+        elif total_chars < 320:
+            return Pt(13.5), Pt(12), 1.25
+        else:
+            return Pt(12.5), Pt(9), 1.20
+    elif count == 3:
+        if total_chars < 300:
+            return Pt(13.0), Pt(10), 1.22
+        elif total_chars < 420:
+            return Pt(12.0), Pt(7), 1.18
+        else:
+            return Pt(11.0), Pt(5), 1.14
+    elif count == 4:
+        if total_chars < 420:
+            return Pt(11.5), Pt(6), 1.16
+        else:
+            return Pt(10.5), Pt(4), 1.12
+    else:  # count >= 5
+        if total_chars < 500:
+            return Pt(10.5), Pt(4), 1.12
+        else:
+            return Pt(9.5), Pt(3), 1.08
+
+
+def _add_paragraph_runs(
+    p,
+    lead: str,
+    body: str,
+    bullet_color: RGBColor = COLOR_INDIGO,
+    font_size: Pt = Pt(13.5),
+    space_after: Pt = Pt(8),
+    line_spacing: float = 1.2,
+):
+    p.space_after = space_after
+    p.line_spacing = line_spacing
 
     b_run = p.add_run()
     b_run.text = "•  "
@@ -383,7 +450,7 @@ def _setup_slide_base(slide, category: str, title: str, takeaway: str, index: in
     p_cat.font.bold = True
     p_cat.font.color.rgb = COLOR_INDIGO
 
-    # 3. Slide Title
+    # 3. Slide Title (Adaptive sizing based on length)
     title_box = slide.shapes.add_textbox(Inches(0.9), Inches(0.65), Inches(11.533), Inches(0.68))
     title_tf = title_box.text_frame
     title_tf.word_wrap = True
@@ -391,7 +458,12 @@ def _setup_slide_base(slide, category: str, title: str, takeaway: str, index: in
     p_title = title_tf.paragraphs[0]
     p_title.text = title
     p_title.font.name = FONT_FAMILY
-    p_title.font.size = Pt(23)
+    if len(title) > 65:
+        p_title.font.size = Pt(19)
+    elif len(title) > 42:
+        p_title.font.size = Pt(21)
+    else:
+        p_title.font.size = Pt(23)
     p_title.font.bold = True
     p_title.font.color.rgb = COLOR_NAVY
 
@@ -400,6 +472,8 @@ def _setup_slide_base(slide, category: str, title: str, takeaway: str, index: in
     sub_text = re.sub(r"^(?:Key\s+Insights?|Key\s+Takeaways?|Insight|Takeaway):\s*", "", sub_text, flags=re.IGNORECASE).strip()
 
     if sub_text:
+        if len(sub_text) > 130:
+            sub_text = sub_text[:130].rsplit(" ", 1)[0] + "..."
         sub_box = slide.shapes.add_textbox(Inches(0.9), Inches(1.38), Inches(11.533), Inches(0.35))
         sub_tf = sub_box.text_frame
         sub_tf.word_wrap = True
@@ -408,7 +482,7 @@ def _setup_slide_base(slide, category: str, title: str, takeaway: str, index: in
         r_txt = p_sub.add_run()
         r_txt.text = sub_text
         r_txt.font.name = FONT_FAMILY
-        r_txt.font.size = Pt(12)
+        r_txt.font.size = Pt(11) if len(sub_text) > 85 else Pt(12)
         r_txt.font.italic = True
         r_txt.font.color.rgb = COLOR_MUTED
 
@@ -479,7 +553,7 @@ def _render_hero_title_slide(slide, data: Dict, total_slides: int, paper_title: 
     r_b.font.bold = True
     r_b.font.color.rgb = COLOR_INDIGO
 
-    # Main Title
+    # Main Title (Adaptive sizing based on length)
     title_box = slide.shapes.add_textbox(Inches(0.9), Inches(1.3), Inches(11.533), Inches(1.5))
     title_tf = title_box.text_frame
     title_tf.word_wrap = True
@@ -487,7 +561,13 @@ def _render_hero_title_slide(slide, data: Dict, total_slides: int, paper_title: 
     p_title = title_tf.paragraphs[0]
     p_title.text = data["title"]
     p_title.font.name = FONT_FAMILY
-    p_title.font.size = Pt(29)
+    title_str = (data.get("title") or "").strip()
+    if len(title_str) > 80:
+        p_title.font.size = Pt(21)
+    elif len(title_str) > 50:
+        p_title.font.size = Pt(25)
+    else:
+        p_title.font.size = Pt(29)
     p_title.font.bold = True
     p_title.font.color.rgb = COLOR_NAVY
 
@@ -495,6 +575,8 @@ def _render_hero_title_slide(slide, data: Dict, total_slides: int, paper_title: 
     if data["takeaway"]:
         clean_sub = re.sub(r"^(?:Key\s+Insights?|Key\s+Takeaways?|Insight|Takeaway):\s*", "", data["takeaway"], flags=re.IGNORECASE).strip()
         if clean_sub:
+            if len(clean_sub) > 130:
+                clean_sub = clean_sub[:130].rsplit(" ", 1)[0] + "..."
             sub_box = slide.shapes.add_textbox(Inches(0.9), Inches(2.95), Inches(11.533), Inches(0.5))
             sub_tf = sub_box.text_frame
             sub_tf.word_wrap = True
@@ -506,7 +588,7 @@ def _render_hero_title_slide(slide, data: Dict, total_slides: int, paper_title: 
             p_sub.font.italic = True
             p_sub.font.color.rgb = COLOR_MUTED
 
-    # 2 Structured Identity & Scope Cards (Zero Truncation)
+    # 2 Structured Identity & Scope Cards (Adaptive Typography & Auto-Fitting)
     bullets = data.get("bullets", [])
     midpoint = max(1, (len(bullets) + 1) // 2)
     left_bullets = bullets[:midpoint]
@@ -548,7 +630,12 @@ def _render_hero_title_slide(slide, data: Dict, total_slides: int, paper_title: 
         r_h.font.bold = True
         r_h.font.color.rgb = accent_color
 
-        # Content text
+        # Content text with adaptive sizing
+        trimmed_bullets = [_trim_bullet_text(b, max_words=24) for b in card_bullets_list]
+        f_size, sp_after, l_space = _calculate_adaptive_typography(
+            trimmed_bullets, max_available_height_inches=2.35
+        )
+
         content_box = slide.shapes.add_textbox(
             left_pos + Inches(0.25), Inches(4.1), width_val - Inches(0.5), Inches(2.35)
         )
@@ -556,10 +643,18 @@ def _render_hero_title_slide(slide, data: Dict, total_slides: int, paper_title: 
         c_tf.word_wrap = True
         c_tf.margin_left = c_tf.margin_right = c_tf.margin_top = c_tf.margin_bottom = 0
 
-        for b_idx, bullet in enumerate(card_bullets_list):
+        for b_idx, bullet in enumerate(trimmed_bullets):
             lead, body = _split_lead_in(bullet)
             p = c_tf.paragraphs[0] if b_idx == 0 else c_tf.add_paragraph()
-            _add_paragraph_runs(p, lead, body, bullet_color=accent_color, font_size=Pt(12.5))
+            _add_paragraph_runs(
+                p,
+                lead,
+                body,
+                bullet_color=accent_color,
+                font_size=f_size,
+                space_after=sp_after,
+                line_spacing=l_space,
+            )
 
     # Bottom footer
     divider = slide.shapes.add_shape(
@@ -597,15 +692,23 @@ def _render_two_column_split_slide(
 ):
     _setup_slide_base(slide, data["category"], data["title"], data["takeaway"], index, total_slides, paper_title)
 
-    bullets = data["bullets"]
-    midpoint = max(1, (len(bullets) + 1) // 2)
-    left_bullets = bullets[:midpoint]
-    right_bullets = bullets[midpoint:]
+    bullets = data.get("bullets", [])
+    if not bullets:
+        bullets = ["Detailed evaluation and findings presented in the research manuscript."]
 
-    columns_spec = [
-        (Inches(0.9), Inches(5.6), left_header, left_bullets, COLOR_INDIGO),
-        (Inches(6.833), Inches(5.6), right_header, right_bullets, COLOR_COBALT),
-    ]
+    # Single wide card if only 1 bullet exists to avoid empty right card
+    if len(bullets) <= 1:
+        columns_spec = [
+            (Inches(0.9), Inches(11.533), left_header, bullets, COLOR_INDIGO),
+        ]
+    else:
+        midpoint = max(1, (len(bullets) + 1) // 2)
+        left_bullets = bullets[:midpoint]
+        right_bullets = bullets[midpoint:]
+        columns_spec = [
+            (Inches(0.9), Inches(5.6), left_header, left_bullets, COLOR_INDIGO),
+            (Inches(6.833), Inches(5.6), right_header, right_bullets, COLOR_COBALT),
+        ]
 
     for left_pos, width_val, col_header, col_bullets, accent_color in columns_spec:
         card = slide.shapes.add_shape(
@@ -637,17 +740,36 @@ def _render_two_column_split_slide(
         r_h.font.bold = True
         r_h.font.color.rgb = accent_color
 
+        # Auto-fitting typography & bullet trimming
+        trimmed_col_bullets = [_trim_bullet_text(b, max_words=26) for b in col_bullets]
+        f_size, sp_after, l_space = _calculate_adaptive_typography(
+            trimmed_col_bullets,
+            max_available_height_inches=3.95,
+        )
+
+        # Adaptive top offset to comfortably center sparse content
+        box_top = Inches(2.65) if len(trimmed_col_bullets) <= 1 else Inches(2.50)
+        box_height = Inches(3.80) if len(trimmed_col_bullets) <= 1 else Inches(3.95)
+
         content_box = slide.shapes.add_textbox(
-            left_pos + Inches(0.3), Inches(2.5), width_val - Inches(0.6), Inches(3.95)
+            left_pos + Inches(0.3), box_top, width_val - Inches(0.6), box_height
         )
         c_tf = content_box.text_frame
         c_tf.word_wrap = True
         c_tf.margin_left = c_tf.margin_right = c_tf.margin_top = c_tf.margin_bottom = 0
 
-        for b_idx, bullet in enumerate(col_bullets):
+        for b_idx, bullet in enumerate(trimmed_col_bullets):
             lead, body = _split_lead_in(bullet)
             p = c_tf.paragraphs[0] if b_idx == 0 else c_tf.add_paragraph()
-            _add_paragraph_runs(p, lead, body, bullet_color=accent_color, font_size=Pt(13.5))
+            _add_paragraph_runs(
+                p,
+                lead,
+                body,
+                bullet_color=accent_color,
+                font_size=f_size,
+                space_after=sp_after,
+                line_spacing=l_space,
+            )
 
 
 def _render_process_flow_slide(slide, data: Dict, index: int, total_slides: int, paper_title: str):

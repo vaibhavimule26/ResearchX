@@ -422,8 +422,8 @@ def _scan_context_for_paper(
             if p_text and len(p_text.strip()) > 100:
                 print(f"[Context Scanner] Found paper in MongoDB: {p_title} ({len(p_text)} chars)")
                 if rag_context and "No relevant evidence" not in rag_context:
-                    return f"Paper Title: {p_title}\n\nKey Relevant Evidence:\n{rag_context}\n\nFull Paper Content:\n{p_text[:35000]}"
-                return f"Paper Title: {p_title}\n\n{p_text[:35000]}"
+                    return f"Paper Title: {p_title}\n\nKey Relevant Evidence:\n{rag_context}\n\nFull Paper Content:\n{p_text[:150000]}"
+                return f"Paper Title: {p_title}\n\n{p_text[:150000]}"
 
     except Exception as mongo_err:
         print(f"[Context Scanner] MongoDB lookup error: {mongo_err}")
@@ -467,7 +467,7 @@ def _scan_context_for_paper(
                     extracted = extract_text_from_file_universal(full_path)
                     if extracted and len(extracted.strip()) > 100:
                         print(f"[Context Scanner] Extracted text from local file: {full_path} ({len(extracted)} chars)")
-                        return f"Paper Title: {f}\n\n{extracted[:35000]}"
+                        return f"Paper Title: {f}\n\n{extracted[:150000]}"
 
     # ==========================================================
     # Tier 3: Vector Store / ChromaDB RAG Search
@@ -694,7 +694,7 @@ def run_agent(
     # ======================================================
     explicit_agent = (kwargs.get("analysis_type") or kwargs.get("agent_type") or "").strip().lower()
 
-    if explicit_agent in ["summary", "executive_summary", "plagiarism", "plagiarism_check", "originality"]:
+    if explicit_agent in ["summary", "executive_summary"]:
         agent_type = "summary"
     elif explicit_agent in ["literature", "literature_survey", "survey"]:
         agent_type = "literature_survey"
@@ -710,11 +710,6 @@ def run_agent(
         agent_type = "presentation"
     elif explicit_agent in ["report", "ieee", "ieee_report", "manuscript", "ieee_paper"]:
         agent_type = "report"
-    elif any(
-        k in q_lower
-        for k in ["plagiar", "similarity", "authenticity"]
-    ):
-        agent_type = "summary"
 
     elif any(
         k in q_lower

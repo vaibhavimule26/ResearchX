@@ -35,7 +35,6 @@ import { Route as DashboardHistoryRouteImport } from './routes/dashboard.history
 import { Route as DashboardHelpRouteImport } from './routes/dashboard.help'
 import { Route as DashboardGapsRouteImport } from './routes/dashboard.gaps'
 import { Route as DashboardExperimentsRouteImport } from './routes/dashboard.experiments'
-import { Route as DashboardDownloadsRouteImport } from './routes/dashboard.downloads'
 import { Route as DashboardDatasetsRouteImport } from './routes/dashboard.datasets'
 import { Route as DashboardChatRouteImport } from './routes/dashboard.chat'
 
@@ -169,11 +168,6 @@ const DashboardExperimentsRoute = DashboardExperimentsRouteImport.update({
   path: '/experiments',
   getParentRoute: () => DashboardRoute,
 } as any)
-const DashboardDownloadsRoute = DashboardDownloadsRouteImport.update({
-  id: '/downloads',
-  path: '/downloads',
-  getParentRoute: () => DashboardRoute,
-} as any)
 const DashboardDatasetsRoute = DashboardDatasetsRouteImport.update({
   id: '/datasets',
   path: '/datasets',
@@ -199,7 +193,6 @@ export interface FileRoutesByFullPath {
   '/workspace-overview': typeof WorkspaceOverviewRoute
   '/dashboard/chat': typeof DashboardChatRoute
   '/dashboard/datasets': typeof DashboardDatasetsRoute
-  '/dashboard/downloads': typeof DashboardDownloadsRoute
   '/dashboard/experiments': typeof DashboardExperimentsRoute
   '/dashboard/gaps': typeof DashboardGapsRoute
   '/dashboard/help': typeof DashboardHelpRoute
@@ -229,7 +222,6 @@ export interface FileRoutesByTo {
   '/workspace-overview': typeof WorkspaceOverviewRoute
   '/dashboard/chat': typeof DashboardChatRoute
   '/dashboard/datasets': typeof DashboardDatasetsRoute
-  '/dashboard/downloads': typeof DashboardDownloadsRoute
   '/dashboard/experiments': typeof DashboardExperimentsRoute
   '/dashboard/gaps': typeof DashboardGapsRoute
   '/dashboard/help': typeof DashboardHelpRoute
@@ -261,7 +253,6 @@ export interface FileRoutesById {
   '/workspace-overview': typeof WorkspaceOverviewRoute
   '/dashboard/chat': typeof DashboardChatRoute
   '/dashboard/datasets': typeof DashboardDatasetsRoute
-  '/dashboard/downloads': typeof DashboardDownloadsRoute
   '/dashboard/experiments': typeof DashboardExperimentsRoute
   '/dashboard/gaps': typeof DashboardGapsRoute
   '/dashboard/help': typeof DashboardHelpRoute
@@ -294,7 +285,6 @@ export interface FileRouteTypes {
     | '/workspace-overview'
     | '/dashboard/chat'
     | '/dashboard/datasets'
-    | '/dashboard/downloads'
     | '/dashboard/experiments'
     | '/dashboard/gaps'
     | '/dashboard/help'
@@ -324,7 +314,6 @@ export interface FileRouteTypes {
     | '/workspace-overview'
     | '/dashboard/chat'
     | '/dashboard/datasets'
-    | '/dashboard/downloads'
     | '/dashboard/experiments'
     | '/dashboard/gaps'
     | '/dashboard/help'
@@ -355,7 +344,6 @@ export interface FileRouteTypes {
     | '/workspace-overview'
     | '/dashboard/chat'
     | '/dashboard/datasets'
-    | '/dashboard/downloads'
     | '/dashboard/experiments'
     | '/dashboard/gaps'
     | '/dashboard/help'
@@ -571,13 +559,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardExperimentsRouteImport
       parentRoute: typeof DashboardRoute
     }
-    '/dashboard/downloads': {
-      id: '/dashboard/downloads'
-      path: '/downloads'
-      fullPath: '/dashboard/downloads'
-      preLoaderRoute: typeof DashboardDownloadsRouteImport
-      parentRoute: typeof DashboardRoute
-    }
     '/dashboard/datasets': {
       id: '/dashboard/datasets'
       path: '/datasets'
@@ -598,7 +579,6 @@ declare module '@tanstack/react-router' {
 interface DashboardRouteChildren {
   DashboardChatRoute: typeof DashboardChatRoute
   DashboardDatasetsRoute: typeof DashboardDatasetsRoute
-  DashboardDownloadsRoute: typeof DashboardDownloadsRoute
   DashboardExperimentsRoute: typeof DashboardExperimentsRoute
   DashboardGapsRoute: typeof DashboardGapsRoute
   DashboardHelpRoute: typeof DashboardHelpRoute
@@ -619,7 +599,6 @@ interface DashboardRouteChildren {
 const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardChatRoute: DashboardChatRoute,
   DashboardDatasetsRoute: DashboardDatasetsRoute,
-  DashboardDownloadsRoute: DashboardDownloadsRoute,
   DashboardExperimentsRoute: DashboardExperimentsRoute,
   DashboardGapsRoute: DashboardGapsRoute,
   DashboardHelpRoute: DashboardHelpRoute,

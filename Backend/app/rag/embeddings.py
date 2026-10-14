@@ -17,10 +17,15 @@ def get_embedding_model():
     global _model
 
     if _model is None:
-        print("[RAG] Loading embedding model...")
-        _model = SentenceTransformer(
-            "all-MiniLM-L6-v2"
-        )
+        try:
+            _model = SentenceTransformer(
+                "all-MiniLM-L6-v2",
+                local_files_only=True
+            )
+        except Exception:
+            _model = SentenceTransformer(
+                "all-MiniLM-L6-v2"
+            )
         print("[RAG] Embedding model loaded.")
 
     return _model

@@ -1,0 +1,4 @@
+1. Pure Attention Without Recurrence or Convolution: The primary novelty is eliminating recurrent (LSTM/GRU) and convolutional operations entirely from sequence-to-sequence modeling, relying exclusively on multi-head dot-product attention to model global dependencies.
+2. Scaled Dot-Product Attention: Introduces explicit scaling by sqrt(d_k) to counteract vanishing gradients in large-dimensional softmax computations.
+3. Multi-Head Attention Mechanism: Projects queries, keys, and values linearly h times into distinct representation subspaces, allowing the model to jointly attend to information from different representation spaces at different positions.
+4. Sinusoidal Positional Encoding: Applies fixed trigonometric functions across dimensions to inject sequential order without recurrent step-by-step unrolling.

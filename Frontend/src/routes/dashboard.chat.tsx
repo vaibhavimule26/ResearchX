@@ -31,6 +31,8 @@ import {
   deleteSearchHistory,
   ChatSource,
 } from "@/lib/api";
+import { AgentEvaluationCard } from "@/components/dashboard/agent-evaluation-card";
+
 
 export const Route = createFileRoute("/dashboard/chat")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -636,8 +638,8 @@ function ChatPage() {
                                 {children}
                               </ol>
                             ),
-                            li: ({ children }) => (
-                              <li className="leading-relaxed pl-1">
+                            li: ({ children }: any) => (
+                              <li className="leading-relaxed pl-1 [&>p]:inline [&>p]:mb-0 [&>p]:leading-relaxed [&>p+p]:block [&>p+p]:mt-1">
                                 {children}
                               </li>
                             ),
@@ -832,8 +834,20 @@ function ChatPage() {
                         </Button>
                       </div>
                     )}
+
+                    {/* Scholarly Accuracy & Factuality Evaluation Card */}
+                    {message.role === "assistant" && (
+                      <AgentEvaluationCard
+                        agentName="chat"
+                        agentTitle="AI Chat / RAG Agent"
+                        outputText={message.content}
+                        paperName={selectedPaper}
+                        query={index > 0 && messages[index - 1]?.role === "user" ? messages[index - 1].content : undefined}
+                      />
+                    )}
                   </div>
                 </div>
+
               ))}
 
             {/* Loading Indicator */}

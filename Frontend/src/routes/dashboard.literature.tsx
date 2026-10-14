@@ -4,7 +4,6 @@ import {
   BookOpen,
   Sparkles,
   Copy,
-  Download,
   CheckCircle2,
   Check,
   Search,
@@ -26,7 +25,8 @@ import { PaperSelectorCard } from "@/components/dashboard/paper-selector-card";
 import { AIProcessingCard } from "@/components/dashboard/ai-processing-card";
 import { EmptyState } from "@/components/dashboard/empty-state";
 import { ErrorState } from "@/components/dashboard/error-state";
-import { getPapers, runAnalysis, uploadPaper } from "@/lib/api";
+import { getPapers, runAnalysis, uploadPaper, agentExecutionManager, AgentCancelledError } from "@/lib/api";
+import { AgentEvaluationCard } from "@/components/dashboard/agent-evaluation-card";
 
 export const Route = createFileRoute("/dashboard/literature")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -171,6 +171,12 @@ function LiteratureSurveyPage() {
     }
   }, [search.paper]);
 
+  useEffect(() => {
+    return () => {
+      agentExecutionManager.stop("literature");
+    };
+  }, []);
+
   const generateSurvey = async (targetPaper?: string, targetTopic?: string) => {
     const paperToUse = targetPaper || selectedPaper;
     if (!paperToUse || loading) return;
@@ -199,7 +205,10 @@ function LiteratureSurveyPage() {
       }
 
       setSurvey(extractMarkdown(rawResult));
-    } catch (err) {
+    } catch (err: any) {
+      if (err instanceof AgentCancelledError || err?.name === "AbortError") {
+        return;
+      }
       setError(
         err instanceof Error ? err.message : "Literature survey generation failed"
       );
@@ -217,35 +226,6 @@ function LiteratureSurveyPage() {
     } catch {
       setError("Failed to copy literature survey");
     }
-  };
-
-  const downloadSurvey = () => {
-    if (!survey) return;
-
-    const header = [
-      "ResearchX — Academic Literature Survey",
-      "=".repeat(60),
-      `Paper: ${selectedPaper}`,
-      activeTopic ? `Focus: ${activeTopic}` : "Focus: Complete Comprehensive Survey",
-      `Generated: ${new Date().toISOString()}`,
-      "=".repeat(60),
-      "",
-      survey,
-    ].join("\n");
-
-    const blob = new Blob([header], { type: "text/markdown;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    const safeFilename = selectedPaper
-      .replace(/\.pdf$/i, "")
-      .replace(/[^a-zA-Z0-9-_]/g, "_");
-
-    anchor.href = url;
-    anchor.download = `${safeFilename || "paper"}-literature-survey.md`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
   };
 
   // Client-side text filter over existing survey output
@@ -288,17 +268,6 @@ function LiteratureSurveyPage() {
                     <span>Copy Survey</span>
                   </>
                 )}
-              </Button>
-
-              <Button
-                variant="hero"
-                size="sm"
-                onClick={downloadSurvey}
-                disabled={!survey || loading}
-                className="h-8 text-xs gap-1.5 shadow-sm"
-              >
-                <Download className="h-3.5 w-3.5" />
-                <span>Export Markdown</span>
               </Button>
             </div>
           ) : undefined
@@ -505,8 +474,10 @@ function LiteratureSurveyPage() {
                         {...props}
                       />
                     ),
-                    li: ({ node, ...props }) => (
-                      <li className="leading-relaxed" {...props} />
+                    li: ({ node, children, ...props }: any) => (
+                      <li className="leading-relaxed pl-1 [&>p]:inline [&>p]:mb-0 [&>p]:leading-relaxed [&>p+p]:block [&>p+p]:mt-1" {...props}>
+                        {children}
+                      </li>
                     ),
                     blockquote: ({ node, ...props }) => (
                       <blockquote
@@ -540,7 +511,16 @@ function LiteratureSurveyPage() {
                 </ReactMarkdown>
               </div>
             </div>
+
+            {/* Scholarly Accuracy & Factuality Evaluation Card */}
+            <AgentEvaluationCard
+              agentName="literature"
+              agentTitle="Literature Survey Agent"
+              outputText={displayedSurvey}
+              paperName={selectedPaper}
+            />
           </div>
+
 
           {/* Right Sidebar: Context & Next Research Steps */}
           <div className="lg:col-span-4 space-y-4">

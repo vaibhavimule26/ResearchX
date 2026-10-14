@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 # ==========================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ENV_PATH = os.path.join(BASE_DIR, ".env")
-load_dotenv(dotenv_path=ENV_PATH, override=True)
+load_dotenv(dotenv_path=ENV_PATH, override=False)
 
 # ==========================================================
 # FastAPI & Middleware Imports
@@ -16,6 +16,7 @@ load_dotenv(dotenv_path=ENV_PATH, override=True)
 from fastapi import FastAPI, Request, Query
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 # ==========================================================
 # Application & Router Imports
@@ -31,6 +32,11 @@ from app.api.presentation import router as presentation_router
 from app.api.dashboard import router as dashboard_router
 from app.api.paper_search import router as paper_search_router
 from app.api.plagiarism import router as plagiarism_router
+from app.api.history import router as history_router
+from app.api.oauth import router as oauth_router
+from app.api.evaluation import router as evaluation_router
+from app.api.performance import router as performance_router
+
 
 # Multi-Agent Coordinator & Generator Services
 from app.agents.coordinator import run_agent
@@ -167,4 +173,19 @@ app.include_router(ppt_router)
 app.include_router(presentation_router)
 app.include_router(dashboard_router)
 app.include_router(plagiarism_router)
+app.include_router(history_router)
 app.include_router(paper_search_router, prefix="/api")
+app.include_router(oauth_router)
+app.include_router(evaluation_router)
+app.include_router(performance_router)
+
+# Mount Static Uploads for Images & Artifacts
+UPLOAD_DIR = (
+    os.path.join(os.path.dirname(BASE_DIR), "uploads")
+    if os.path.exists(os.path.join(os.path.dirname(BASE_DIR), "uploads"))
+    else os.path.join(BASE_DIR, "uploads")
+)
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+

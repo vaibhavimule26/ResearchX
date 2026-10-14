@@ -23,3 +23,10 @@ agent_runs_collection = db["agent_runs"]
 
 # Search History
 search_history_collection = db["search_history"]
+
+# User Activity History
+user_activities_collection = db["user_activities"]
+
+# Agent Evaluations
+evaluations_collection = db["evaluations"]
+

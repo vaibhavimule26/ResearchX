@@ -87,8 +87,16 @@ def generate_presentation(
             "Please verify that the target document has been properly uploaded."
         )
 
-    # Extract clean context slice (up to 35,000 characters for deep technical grounding)
-    paper_context = content[:35000]
+    # Optimize context slice (up to 16,000 chars targeting abstract, methods, and results)
+    # This drastically speeds up prompt processing while preserving deep technical grounding
+    if len(content) > 16000:
+        paper_context = (
+            content[:9500]
+            + "\n\n[... Technical Methodology, Benchmark Results & Conclusion ...]\n\n"
+            + content[-6500:]
+        )
+    else:
+        paper_context = content
 
     question = f"""You are the Senior IEEE & ACM Academic Presentation Designer for ResearchX.
 Your task is to analyze the provided research paper ("{doc_title}") and construct an authentic, mathematically and empirically precise, 11-slide conference presentation deck for a high-stakes research defense.
@@ -259,10 +267,10 @@ Welcome everyone. Today I will be presenting our research investigation into thi
 
 Formatting Constraints:
 - Exactly 11 slides following this template.
-- 3 to 5 bullet points per slide.
+- 3 to 4 bullet points per slide (never more than 4, never fewer than 3).
 - Every bullet MUST follow: - **[Concept]:** [Detailed explanation with facts/numbers].
-- Keep each bullet between 12 and 28 words.
-- Speaker Notes MUST be 2 to 3 polished sentences suitable for live presentation.
+- Keep each bullet strictly between 14 and 22 words: high-impact, factual, zero filler words. This prevents crowded slides and ensures proper visual fitting.
+- Speaker Notes MUST be 1 to 2 crisp, polished sentences suitable for live presentation.
 - Use ONLY facts from the uploaded paper. NEVER invent facts.
 """
 

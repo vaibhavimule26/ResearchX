@@ -6,7 +6,6 @@ import {
   Database,
   Sparkles,
   Copy,
-  Download,
   CheckCircle2,
   FileText,
   Search,
@@ -26,7 +25,8 @@ import { PaperSelectorCard } from "@/components/dashboard/paper-selector-card";
 import { AIProcessingCard } from "@/components/dashboard/ai-processing-card";
 import { EmptyState } from "@/components/dashboard/empty-state";
 import { ErrorState } from "@/components/dashboard/error-state";
-import { getPapers, runAnalysis } from "@/lib/api";
+import { getPapers, runAnalysis, agentExecutionManager, AgentCancelledError } from "@/lib/api";
+import { AgentEvaluationCard } from "@/components/dashboard/agent-evaluation-card";
 
 export const Route = createFileRoute("/dashboard/datasets")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -161,6 +161,12 @@ function DatasetsPage() {
     loadPapers();
   }, [search.paper]);
 
+  useEffect(() => {
+    return () => {
+      agentExecutionManager.stop("datasets");
+    };
+  }, []);
+
   const handleRecommend = async () => {
     if (loading) return;
 
@@ -195,7 +201,10 @@ function DatasetsPage() {
       }
 
       setRecommendations(extractMarkdown(rawResult));
-    } catch (err) {
+    } catch (err: any) {
+      if (err instanceof AgentCancelledError || err?.name === "AbortError") {
+        return;
+      }
       setError(
         err instanceof Error ? err.message : "Dataset recommendation failed"
       );
@@ -213,40 +222,6 @@ function DatasetsPage() {
     } catch {
       setError("Failed to copy dataset recommendations");
     }
-  };
-
-  const downloadRecommendations = () => {
-    if (!recommendations) return;
-
-    const targetTitle =
-      mode === "paper"
-        ? `Paper: ${selectedPaper}`
-        : `Research Query: ${customQuery}`;
-
-    const content = [
-      "ResearchX Dataset Intelligence & Benchmark Report",
-      "=".repeat(60),
-      targetTitle,
-      `Generated At: ${new Date().toISOString()}`,
-      "=".repeat(60),
-      "",
-      recommendations,
-    ].join("\n");
-
-    const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    const safeName = (mode === "paper" ? selectedPaper : customQuery)
-      .replace(/\.pdf$/i, "")
-      .replace(/[^a-zA-Z0-9-_]/g, "_")
-      .slice(0, 30);
-
-    anchor.href = url;
-    anchor.download = `${safeName || "benchmark"}_dataset_recommendations.md`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
   };
 
   return (
@@ -281,17 +256,6 @@ function DatasetsPage() {
                     <span>Copy Report</span>
                   </>
                 )}
-              </Button>
-
-              <Button
-                variant="hero"
-                size="sm"
-                onClick={downloadRecommendations}
-                disabled={!recommendations || loading}
-                className="h-8 text-xs gap-1.5 shadow-sm"
-              >
-                <Download className="h-3.5 w-3.5" />
-                <span>Export Report</span>
               </Button>
             </div>
           ) : undefined
@@ -536,8 +500,10 @@ function DatasetsPage() {
                         {...props}
                       />
                     ),
-                    li: ({ node, ...props }) => (
-                      <li className="leading-relaxed" {...props} />
+                    li: ({ node, children, ...props }: any) => (
+                      <li className="leading-relaxed pl-1 [&>p]:inline [&>p]:mb-0 [&>p]:leading-relaxed [&>p+p]:block [&>p+p]:mt-1" {...props}>
+                        {children}
+                      </li>
                     ),
                     blockquote: ({ node, ...props }) => (
                       <blockquote
@@ -582,9 +548,20 @@ function DatasetsPage() {
                 >
                   {recommendations}
                 </ReactMarkdown>
+
               </div>
             </div>
+
+            {/* Scholarly Accuracy & Factuality Evaluation Card */}
+            <AgentEvaluationCard
+              agentName="datasets"
+              agentTitle="Dataset Recommendation Agent"
+              outputText={recommendations}
+              paperName={selectedPaper}
+              query={query}
+            />
           </div>
+
 
           {/* Right Sidebar: Dataset Context & Next Actions */}
           <div className="lg:col-span-4 space-y-4">

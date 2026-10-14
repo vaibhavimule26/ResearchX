@@ -1,7 +1,9 @@
 from typing import Any, Dict, List, Optional, Tuple, Union
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 
 from app.search.paper_search_service import search_workspace_papers
+from app.auth.jwt_handler import get_optional_user
+from app.services.activity_service import log_user_activity
 
 router = APIRouter()
 
@@ -10,6 +12,7 @@ router = APIRouter()
 @router.get("/papers/search")
 @router.get("/search")
 async def search_papers_api(
+    request: Request = None,
     query: str = Query(..., description="Query for academic research"),
     sort_by: Optional[str] = Query(
         "relevance",
@@ -35,6 +38,24 @@ async def search_papers_api(
 
     corrected_query = results[0].get("search_corrected_query", query) if results else query
 
+    # Log user activity if authenticated
+    try:
+        user = get_optional_user(request)
+        if user:
+            log_user_activity(
+                user_id=user["user_id"],
+                user_email=user["email"],
+                action_name="Paper Search",
+                activity_type="search",
+                topic=query,
+                paper_name=None,
+                agent="Paper Search",
+                status="Completed",
+                details=f"{len(results)} papers found",
+            )
+    except Exception as e:
+        print(f"[Search Activity Log Error]: {e}")
+
     return {
         "success": True,
         "data": results,
@@ -46,4 +67,4 @@ async def search_papers_api(
         "sort_by": sort_by or "relevance",
         "filter_year": year or "all",
         "filter_source": source or "all",
-    }
+    }

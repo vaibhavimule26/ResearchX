@@ -4,7 +4,6 @@ import {
   Lightbulb,
   Sparkles,
   Copy,
-  Download,
   CheckCircle2,
   Check,
   AlertTriangle,
@@ -27,6 +26,7 @@ import { AIProcessingCard } from "@/components/dashboard/ai-processing-card";
 import { EmptyState } from "@/components/dashboard/empty-state";
 import { ErrorState } from "@/components/dashboard/error-state";
 import { getPapers, runAnalysis } from "@/lib/api";
+import { AgentEvaluationCard } from "@/components/dashboard/agent-evaluation-card";
 
 export const Route = createFileRoute("/dashboard/gaps")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -209,34 +209,6 @@ function ResearchGapsPage() {
     }
   };
 
-  const downloadGaps = () => {
-    if (!gaps) return;
-
-    const content = [
-      "ResearchX — Research Gaps & Limitations Report",
-      "=".repeat(60),
-      `Paper: ${selectedPaper}`,
-      `Generated: ${new Date().toISOString()}`,
-      "=".repeat(60),
-      "",
-      gaps,
-    ].join("\n");
-
-    const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    const safeFilename = selectedPaper
-      .replace(/\.pdf$/i, "")
-      .replace(/[^a-zA-Z0-9-_]/g, "_");
-
-    anchor.href = url;
-    anchor.download = `${safeFilename || "paper"}-research-gaps.md`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
-  };
-
   return (
     <div className="min-w-0 space-y-6">
       <PageHeader
@@ -267,17 +239,6 @@ function ResearchGapsPage() {
                     <span>Copy Analysis</span>
                   </>
                 )}
-              </Button>
-
-              <Button
-                variant="hero"
-                size="sm"
-                onClick={downloadGaps}
-                disabled={!gaps || loading}
-                className="h-8 text-xs gap-1.5 shadow-sm"
-              >
-                <Download className="h-3.5 w-3.5" />
-                <span>Export Report</span>
               </Button>
             </div>
           ) : undefined
@@ -505,9 +466,19 @@ function ResearchGapsPage() {
                 >
                   {gaps}
                 </ReactMarkdown>
+
               </div>
             </div>
+
+            {/* Scholarly Accuracy & Factuality Evaluation Card */}
+            <AgentEvaluationCard
+              agentName="gaps"
+              agentTitle="Research Gap Agent"
+              outputText={gaps}
+              paperName={selectedPaper}
+            />
           </div>
+
 
           {/* Right Sidebar: Research Opportunity Radar & Workflow (4 cols) */}
           <div className="lg:col-span-4 space-y-4">

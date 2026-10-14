@@ -20,6 +20,14 @@ function DashboardLayout() {
   });
 
   useEffect(() => {
+    // Check if token was passed directly via URL query params
+    const params = new URLSearchParams(window.location.search);
+    const queryToken = params.get("token");
+    if (queryToken) {
+      localStorage.setItem("token", queryToken);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
     const token = localStorage.getItem("token");
 
     if (!token) {
@@ -39,6 +47,7 @@ function DashboardLayout() {
         navigate({ to: "/login" });
       });
   }, [navigate]);
+
 
   return (
     <div className="relative flex min-h-screen w-full overflow-hidden bg-background">

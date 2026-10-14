@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 from dotenv import load_dotenv
 
@@ -25,7 +26,7 @@ load_dotenv(
 def build_user_content(
     prompt: str,
     context: str = "",
-    context_limit: int = 120000
+    context_limit: int = 24000
 ) -> str:
 
     if context:
@@ -73,13 +74,14 @@ def call_cohere_api(prompt: str, context: str = "") -> str:
     if not api_key:
         return "No LLM API key is available."
 
+    t0 = time.time()
     try:
         co = _get_cohere_client(api_key=api_key)
 
         user_content = build_user_content(
             prompt,
             context,
-            120000
+            24000
         )
 
         res = co.chat(
@@ -92,10 +94,12 @@ def call_cohere_api(prompt: str, context: str = "") -> str:
             ]
         )
 
-        return res.message.content[0].text.strip()
+        output = res.message.content[0].text.strip()
+        print(f"[PERF] Cohere LLM call: {time.time() - t0:.2f}s")
+        return output
 
     except Exception as e:
-        print(f"[Cohere Error]: {e}")
+        print(f"[Cohere Error ({time.time() - t0:.2f}s)]: {e}")
         return "Cohere request failed."
 
 
@@ -107,29 +111,28 @@ def call_groq_api(prompt: str, context: str = "") -> str:
     api_key = os.getenv("GROQ_API_KEY")
 
     if not api_key:
-        print("[Groq] API key missing. Using Mistral / Cohere fallback.")
-        return call_mistral_api(prompt, context)
+        print("[Groq] API key missing. Using Cohere fallback.")
+        return call_cohere_api(prompt, context)
 
+    t0 = time.time()
     try:
         client = _get_groq_client(api_key=api_key)
 
         user_content = build_user_content(
             prompt,
             context,
-            120000
+            24000
         )
 
         # Active, verified high-speed models on Groq
         models = [
-            "openai/gpt-oss-120b",
             "qwen/qwen3.8-27b",
             "openai/gpt-oss-20b",
-            "qwen/qwen3.6-27b",
-            "groq/compound",
+            "openai/gpt-oss-120b",
         ]
 
         for model in models:
-
+            t_model = time.time()
             try:
                 res = client.chat.completions.create(
                     model=model,
@@ -160,11 +163,11 @@ def call_groq_api(prompt: str, context: str = "") -> str:
                 output = res.choices[0].message.content
 
                 if output and output.strip():
+                    print(f"[PERF] Groq LLM call ({model}): {time.time() - t_model:.2f}s (total {time.time() - t0:.2f}s)")
                     return output.strip()
 
             except Exception as model_error:
                 err_msg = str(model_error).lower()
-                # Fast failover on rate limit or missing model without stalling
                 if "rate_limit" in err_msg or "429" in err_msg:
                     print(f"[Groq Rate Limit - {model}]: {model_error}")
                     break
@@ -188,13 +191,14 @@ def call_mistral_api(prompt: str, context: str = "") -> str:
     api_key = os.getenv("MISTRAL_API_KEY")
 
     if not api_key:
-        return call_cohere_api(prompt, context)
+        return call_groq_api(prompt, context)
 
+    t0 = time.time()
     try:
         user_content = build_user_content(
             prompt,
             context,
-            120000
+            24000
         )
 
         res = _http_session.post(
@@ -222,22 +226,23 @@ def call_mistral_api(prompt: str, context: str = "") -> str:
                 "temperature": 0.2,
                 "max_tokens": 2500
             },
-            timeout=15
+            timeout=10
         )
 
         if res.status_code == 200:
-            return res.json()[
-                "choices"
-            ][0]["message"]["content"].strip()
+            output = res.json()["choices"][0]["message"]["content"].strip()
+            print(f"[PERF] Mistral LLM call: {time.time() - t0:.2f}s")
+            return output
 
         print(
-            f"[Mistral Error {res.status_code}]: {res.text[:200]}"
+            f"[Mistral Error {res.status_code} ({time.time() - t0:.2f}s)]: {res.text[:200]}"
         )
 
     except Exception as e:
-        print(f"[Mistral Error]: {e}")
+        print(f"[Mistral Error ({time.time() - t0:.2f}s)]: {e}")
 
-    return call_cohere_api(prompt, context)
+    # Fast failover: Groq first (0.3s) then Cohere
+    return call_groq_api(prompt, context)
 
 
 # ==========================================================
@@ -250,11 +255,12 @@ def call_openrouter_api(prompt: str, context: str = "") -> str:
     if not api_key:
         return call_groq_api(prompt, context)
 
+    t0 = time.time()
     try:
         user_content = build_user_content(
             prompt,
             context,
-            120000
+            24000
         )
 
         res = _http_session.post(
@@ -281,21 +287,21 @@ def call_openrouter_api(prompt: str, context: str = "") -> str:
                 "temperature": 0.2,
                 "max_tokens": 2500
             },
-            timeout=15
+            timeout=12
         )
 
         if res.status_code == 200:
-            return res.json()[
-                "choices"
-            ][0]["message"]["content"].strip()
+            output = res.json()["choices"][0]["message"]["content"].strip()
+            print(f"[PERF] OpenRouter LLM call: {time.time() - t0:.2f}s")
+            return output
 
         print(
-            f"[OpenRouter Error {res.status_code}]: "
+            f"[OpenRouter Error {res.status_code} ({time.time() - t0:.2f}s)]: "
             f"{res.text[:200]}"
         )
 
     except Exception as e:
-        print(f"[OpenRouter Error]: {e}")
+        print(f"[OpenRouter Error ({time.time() - t0:.2f}s)]: {e}")
 
     return call_groq_api(prompt, context)
 
@@ -308,14 +314,15 @@ def call_gemini_api(prompt: str, context: str = "") -> str:
     api_key = os.getenv("GEMINI_API_KEY")
 
     if not api_key:
-        return call_cohere_api(prompt, context)
+        return call_groq_api(prompt, context)
 
     user_content = build_user_content(
         prompt,
         context,
-        120000
+        24000
     )
 
+    t0 = time.time()
     try:
         import google.generativeai as genai
 
@@ -330,9 +337,11 @@ def call_gemini_api(prompt: str, context: str = "") -> str:
         )
 
         if response.text:
-            return response.text.strip()
+            output = response.text.strip()
+            print(f"[PERF] Gemini LLM call: {time.time() - t0:.2f}s")
+            return output
 
     except Exception as e:
-        print(f"[Gemini API Error]: {e}")
+        print(f"[Gemini API Error ({time.time() - t0:.2f}s)]: {e}")
 
-    return call_cohere_api(prompt, context)
+    return call_groq_api(prompt, context)

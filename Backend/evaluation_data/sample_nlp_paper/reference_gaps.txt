@@ -1,0 +1,4 @@
+1. Quadratic Computational and Memory Complexity: Self-attention has O(n^2) complexity with respect to sequence length n, creating severe memory and computational bottlenecks for long-context documents or high-resolution inputs.
+2. Inability to Generalize Beyond Max Sequence Lengths: Positional encodings, whether sinusoidal or learned, struggle to extrapolate effectively to sequence lengths significantly longer than those encountered during training.
+3. Lack of Inductive Bias for Local Neighborhoods: Unlike convolutional architectures that inherently leverage spatial locality, pure self-attention must learn locality priors from scratch, requiring substantially larger pre-training corpora.
+4. Auto-regressive Generation Latency at Inference: While training is highly parallelized, decoding remains sequential token-by-token, limiting high-throughput inference without speculative or non-autoregressive decoding techniques.

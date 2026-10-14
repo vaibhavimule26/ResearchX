@@ -236,6 +236,7 @@ def run_literature_agent(
 
     paper_contexts = []
     paper_titles = []
+    paper_contexts_map = {}
 
     for idx, paper in enumerate(papers, start=1):
 
@@ -306,6 +307,8 @@ def run_literature_agent(
             else:
                 context_lines.append(f"Research Scope: Investigates {topic} with proposed methodology on {title}.")
             context = "\n".join(context_lines)
+
+        paper_contexts_map[title] = context
 
         paper_contexts.append(
             f"""================ PAPER {idx} =================
@@ -423,6 +426,19 @@ RULES:
             "| :--- | :--- | :--- | :--- | :--- | :--- |\n" +
             "\n".join(rows)
         )
+
+    # Add an "Accuracy" column to the Literature Survey Agent output table in AI Workspace,
+    # calculated directly from the existing agent-specific evaluation system.
+    try:
+        from app.evaluation.agent_evaluators.literature_evaluator import evaluate_workspace_literature_table
+        result = evaluate_workspace_literature_table(
+            table_text=result,
+            papers=papers,
+            topic=topic,
+            paper_contexts=paper_contexts_map,
+        )
+    except Exception as e:
+        print(f"[Literature Agent Accuracy Evaluation Warning]: {e}")
 
     return [{
         "paper_name": "Literature Survey",

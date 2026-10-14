@@ -4,7 +4,6 @@ import {
   FlaskConical,
   Sparkles,
   Copy,
-  Download,
   CheckCircle2,
   Check,
   Target,
@@ -25,7 +24,8 @@ import { PaperSelectorCard } from "@/components/dashboard/paper-selector-card";
 import { AIProcessingCard } from "@/components/dashboard/ai-processing-card";
 import { EmptyState } from "@/components/dashboard/empty-state";
 import { ErrorState } from "@/components/dashboard/error-state";
-import { getPapers, runAnalysis } from "@/lib/api";
+import { getPapers, runAnalysis, agentExecutionManager, AgentCancelledError } from "@/lib/api";
+import { AgentEvaluationCard } from "@/components/dashboard/agent-evaluation-card";
 
 export const Route = createFileRoute("/dashboard/experiments")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -167,6 +167,12 @@ function ExperimentsPage() {
     }
   }, [search.paper]);
 
+  useEffect(() => {
+    return () => {
+      agentExecutionManager.stop("experiments");
+    };
+  }, []);
+
   const generateExperiments = async (targetPaper?: string) => {
     const paperToRun = targetPaper || selectedPaper;
     if (!paperToRun || loading) return;
@@ -187,7 +193,10 @@ function ExperimentsPage() {
       }
 
       setProtocol(extractMarkdown(rawResult));
-    } catch (err) {
+    } catch (err: any) {
+      if (err instanceof AgentCancelledError || err?.name === "AbortError") {
+        return;
+      }
       setError(
         err instanceof Error ? err.message : "Experiment generation failed"
       );
@@ -205,34 +214,6 @@ function ExperimentsPage() {
     } catch {
       setError("Failed to copy experimental protocol");
     }
-  };
-
-  const downloadProtocol = () => {
-    if (!protocol) return;
-
-    const content = [
-      "ResearchX — Experimental Replication & Validation Protocol",
-      "=".repeat(60),
-      `Paper: ${selectedPaper}`,
-      `Generated: ${new Date().toISOString()}`,
-      "=".repeat(60),
-      "",
-      protocol,
-    ].join("\n");
-
-    const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    const safeFilename = selectedPaper
-      .replace(/\.pdf$/i, "")
-      .replace(/[^a-zA-Z0-9-_]/g, "_");
-
-    anchor.href = url;
-    anchor.download = `${safeFilename || "paper"}-experimental-protocol.md`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
   };
 
   return (
@@ -265,17 +246,6 @@ function ExperimentsPage() {
                     <span>Copy Protocol</span>
                   </>
                 )}
-              </Button>
-
-              <Button
-                variant="hero"
-                size="sm"
-                onClick={downloadProtocol}
-                disabled={!protocol || loading}
-                className="h-8 text-xs gap-1.5 shadow-sm"
-              >
-                <Download className="h-3.5 w-3.5" />
-                <span>Export Protocol</span>
               </Button>
             </div>
           ) : undefined
@@ -448,8 +418,10 @@ function ExperimentsPage() {
                         {...props}
                       />
                     ),
-                    li: ({ node, ...props }) => (
-                      <li className="leading-relaxed" {...props} />
+                    li: ({ node, children, ...props }: any) => (
+                      <li className="leading-relaxed pl-1 [&>p]:inline [&>p]:mb-0 [&>p]:leading-relaxed [&>p+p]:block [&>p+p]:mt-1" {...props}>
+                        {children}
+                      </li>
                     ),
                     blockquote: ({ node, ...props }) => (
                       <blockquote
@@ -483,7 +455,16 @@ function ExperimentsPage() {
                 </ReactMarkdown>
               </div>
             </div>
+
+            {/* Scholarly Accuracy & Factuality Evaluation Card */}
+            <AgentEvaluationCard
+              agentName="experiments"
+              agentTitle="Experiment Recommendation Agent"
+              outputText={protocol}
+              paperName={selectedPaper}
+            />
           </div>
+
 
           {/* Right Sidebar: Execution Checklist & Navigation */}
           <div className="lg:col-span-4 space-y-4">

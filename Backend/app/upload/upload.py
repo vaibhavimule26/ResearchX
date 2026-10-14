@@ -1,5 +1,7 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, Request
 from fastapi.responses import FileResponse
+from app.auth.jwt_handler import get_optional_user
+from app.services.activity_service import log_user_activity
 
 from app.database.mongodb import papers_collection
 from app.database.chroma import collection
@@ -25,7 +27,8 @@ UPLOAD_FOLDER = "uploads"
 # Upload PDF
 # ==========================
 @router.post("/upload")
-async def upload_pdf(file: UploadFile = File(...)):
+async def upload_pdf(file: UploadFile = File(...), request: Request = None):
+
 
     # Validate PDF file
     if not file.filename:
@@ -171,10 +174,29 @@ async def upload_pdf(file: UploadFile = File(...)):
             paper
         )
 
+        # Log activity if user is authenticated
+        try:
+            user = get_optional_user(request)
+            if user:
+                log_user_activity(
+                    user_id=user["user_id"],
+                    user_email=user["email"],
+                    action_name="PDF Uploaded",
+                    activity_type="upload",
+                    topic=None,
+                    paper_name=file.filename,
+                    agent="Document Ingestion",
+                    status="Completed",
+                    details=f"Uploaded {file.filename} ({len(chunks)} chunks indexed)",
+                )
+        except Exception as act_err:
+            print(f"[Upload Activity Log Error]: {act_err}")
+
         # Invalidate in-memory caches
         clear_context_cache()
         clear_rag_cache()
         clear_plagiarism_cache()
+
 
         return success_response(
             message="PDF uploaded successfully",

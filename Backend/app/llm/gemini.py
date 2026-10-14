@@ -21,36 +21,44 @@ load_dotenv(
     override=True,
 )
 
+_cached_model = None
+
 def get_configured_model():
-    """Initializes high-accuracy LLM using active working keys from .env."""
-    mistral_key = os.getenv("MISTRAL_API_KEY")
+    """Initializes high-accuracy LLM using active working keys from .env with client caching."""
+    global _cached_model
+    if _cached_model is not None:
+        return _cached_model
+
     groq_key = os.getenv("GROQ_API_KEY")
     openrouter_key = os.getenv("OPENROUTER_API_KEY")
+    mistral_key = os.getenv("MISTRAL_API_KEY")
 
-    if mistral_key:
-        return ChatMistralAI(
-            model="mistral-small-latest",
-            mistral_api_key=mistral_key,
-            temperature=0.1,
-            max_tokens=4096,
-        )
-    elif groq_key:
-        return ChatGroq(
-            model_name="llama-3.1-8b-instant",
+    if groq_key:
+        _cached_model = ChatGroq(
+            model_name="qwen/qwen3.8-27b",
             groq_api_key=groq_key,
             temperature=0.1,
             max_tokens=4096,
         )
     elif openrouter_key:
-        return ChatOpenAI(
+        _cached_model = ChatOpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=openrouter_key,
-            model="deepseek/deepseek-chat",
+            model="meta-llama/llama-3.3-70b-instruct",
+            temperature=0.1,
+            max_tokens=4096,
+        )
+    elif mistral_key:
+        _cached_model = ChatMistralAI(
+            model="mistral-small-latest",
+            mistral_api_key=mistral_key,
             temperature=0.1,
             max_tokens=4096,
         )
     else:
-        raise ValueError("No active API keys found in .env (Mistral, Groq, or OpenRouter required).")
+        raise ValueError("No active API keys found in .env (Groq, OpenRouter, or Mistral required).")
+
+    return _cached_model
 
 
 # ==========================
@@ -59,7 +67,7 @@ def get_configured_model():
 def generate_answer(
     context: str,
     question: str,
-    max_retries: int = 3,
+    max_retries: int = 2,
 ) -> str:
     if not context or not context.strip():
         return "No research paper context was provided."
@@ -67,54 +75,51 @@ def generate_answer(
     if not question or not question.strip():
         return "No research question was provided."
 
-    prompt = f"""You are ResearchX, an advanced AI Academic Research Assistant.
+    t0 = time.time()
 
-Analyze the provided research paper context thoroughly and synthesize an accurate, detailed, and scholarly answer.
+    # 1. Fast Primary: Groq API with verified ultra-fast models (sub-second)
+    try:
+        from app.llm.multi_api_router import call_groq_api
+        groq_resp = call_groq_api(prompt=question, context=context)
+        if groq_resp and len(groq_resp.strip()) > 50 and not groq_resp.startswith("Groq"):
+            print(f"[PERF] generate_answer via Groq: {time.time() - t0:.2f}s")
+            return groq_resp.strip()
+    except Exception as g_err:
+        logger.warning(f"Groq primary failed: {g_err}")
 
-GUIDELINES:
-1. Ground your analysis in the provided paper context (title, abstract, methodology, results, and problem formulation).
-2. Synthesize concrete academic insights. Avoid generic placeholders like "Not specified", "N/A", or "Not available".
-3. Provide a complete, well-structured scholarly answer with clear technical reasoning.
-4. Do NOT use emojis or informal commentary.
+    # 2. Secondary: Cohere API
+    try:
+        from app.llm.multi_api_router import call_cohere_api
+        cohere_resp = call_cohere_api(prompt=question, context=context)
+        if cohere_resp and len(cohere_resp.strip()) > 50 and not cohere_resp.startswith("Cohere"):
+            print(f"[PERF] generate_answer via Cohere: {time.time() - t0:.2f}s")
+            return cohere_resp.strip()
+    except Exception as c_err:
+        logger.warning(f"Cohere secondary failed: {c_err}")
 
-RESEARCH PAPER:
-{context}
+    # 3. Tertiary: OpenRouter API
+    try:
+        from app.llm.multi_api_router import call_openrouter_api
+        or_resp = call_openrouter_api(prompt=question, context=context)
+        if or_resp and len(or_resp.strip()) > 50:
+            print(f"[PERF] generate_answer via OpenRouter: {time.time() - t0:.2f}s")
+            return or_resp.strip()
+    except Exception as or_err:
+        logger.warning(f"OpenRouter tertiary failed: {or_err}")
 
-QUESTION / TASK:
-{question}
-"""
-
-    last_error = None
-
+    # 4. Fallback: LangChain configured model
     for attempt in range(max_retries):
         try:
             model = get_configured_model()
+            prompt = f"Research Paper Context:\n{context[:24000]}\n\nTask / Question:\n{question}"
             response = model.invoke(prompt)
-
             text = response.content if hasattr(response, "content") else str(response)
-            if not text or not text.strip():
-                return "LLM returned an empty response."
-
-            return text.strip()
-
+            if text and text.strip():
+                print(f"[PERF] generate_answer via LangChain fallback: {time.time() - t0:.2f}s")
+                return text.strip()
         except Exception as error:
-            last_error = error
-            logger.warning(f"Generation attempt {attempt + 1} failed: {str(error)}")
-            # Fast failover if rate limited (429)
+            logger.warning(f"LangChain attempt {attempt + 1} failed: {error}")
             if "429" in str(error) or "rate" in str(error).lower():
                 break
-            time.sleep(0.5)
 
-    # Fallback to multi_api_router if primary model fails or is rate limited
-    try:
-        from app.llm.multi_api_router import call_groq_api, call_cohere_api
-        groq_resp = call_groq_api(prompt=question, context=context)
-        if groq_resp and len(groq_resp.strip()) > 50 and not groq_resp.startswith("Groq API error"):
-            return groq_resp.strip()
-        cohere_resp = call_cohere_api(prompt=question, context=context)
-        if cohere_resp and len(cohere_resp.strip()) > 50 and not cohere_resp.startswith("Cohere API error"):
-            return cohere_resp.strip()
-    except Exception as fb_err:
-        logger.warning(f"Fallback generation failed: {fb_err}")
-
-    raise RuntimeError(f"Request failed after retries: {str(last_error)}")
+    raise RuntimeError("All LLM providers failed to generate an answer.")

@@ -1,6 +1,6 @@
 import os
 import re
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from pptx import Presentation
 from pptx.dml.color import RGBColor
@@ -40,6 +40,59 @@ def _split_lead(text: str):
             clean_first = re.sub(r"^(?:Key\s+Takeaways?|Takeaway)\b", "Empirical Deliverable", clean_first, flags=re.IGNORECASE).strip()
             return f"{clean_first}: ", parts[1].strip()
     return "", text
+
+
+def _trim_bullet_text(bullet: str, max_words: int = 26) -> str:
+    """Ensure bullet points stay crisp and do not crowd the slide."""
+    lead, body = _split_lead(bullet)
+    words = body.split()
+    if len(words) > max_words:
+        body = " ".join(words[:max_words]).rstrip(",;:-.") + "..."
+    if lead:
+        return f"{lead}{body}"
+    return body
+
+
+def _calculate_adaptive_typography(
+    bullets: List[str],
+    max_available_height_inches: float = 4.0,
+) -> Tuple[Pt, Pt, float]:
+    """Dynamically determine font size, space_after, and line spacing."""
+    count = len(bullets)
+    total_chars = sum(len(b) for b in bullets)
+
+    if count <= 1:
+        if total_chars < 140:
+            return Pt(16.5), Pt(18), 1.35
+        elif total_chars < 220:
+            return Pt(15.0), Pt(14), 1.30
+        else:
+            return Pt(13.5), Pt(10), 1.22
+    elif count == 2:
+        if total_chars < 200:
+            return Pt(15.5), Pt(18), 1.32
+        elif total_chars < 320:
+            return Pt(14.0), Pt(14), 1.25
+        else:
+            return Pt(12.5), Pt(10), 1.20
+    elif count == 3:
+        if total_chars < 300:
+            return Pt(13.5), Pt(12), 1.22
+        elif total_chars < 420:
+            return Pt(12.5), Pt(8), 1.18
+        else:
+            return Pt(11.5), Pt(5), 1.14
+    elif count == 4:
+        if total_chars < 420:
+            return Pt(12.0), Pt(7), 1.16
+        else:
+            return Pt(11.0), Pt(5), 1.12
+    else:
+        if total_chars < 500:
+            return Pt(11.0), Pt(4), 1.12
+        else:
+            return Pt(10.0), Pt(3), 1.08
+
 
 
 def generate_ieee_presentation(paper_title: str, slides_content: List[Dict]) -> str:
@@ -104,7 +157,12 @@ def generate_ieee_presentation(paper_title: str, slides_content: List[Dict]) -> 
     t_p = t_tf.paragraphs[0]
     t_p.text = clean_title
     t_p.font.name = FONT_FAMILY
-    t_p.font.size = Pt(28)
+    if len(clean_title) > 75:
+        t_p.font.size = Pt(21)
+    elif len(clean_title) > 45:
+        t_p.font.size = Pt(24.5)
+    else:
+        t_p.font.size = Pt(28)
     t_p.font.bold = True
     t_p.font.color.rgb = COLOR_NAVY
 
@@ -164,7 +222,7 @@ def generate_ieee_presentation(paper_title: str, slides_content: List[Dict]) -> 
     r_fr.font.color.rgb = COLOR_NAVY
 
     # ----------------------------------------------------
-    # Content Slides
+    # Content Slides (Adaptive Typography & Auto-Fitting)
     # ----------------------------------------------------
     for s_idx, slide_data in enumerate(slides_content, start=2):
         slide = prs.slides.add_slide(blank_layout)
@@ -184,48 +242,111 @@ def generate_ieee_presentation(paper_title: str, slides_content: List[Dict]) -> 
 
         h_box = slide.shapes.add_textbox(Inches(0.9), Inches(0.65), Inches(11.533), Inches(0.68))
         hp = h_box.text_frame.paragraphs[0]
-        hp.text = slide_data.get("heading", f"Slide {s_idx}")
+        h_text = slide_data.get("heading", f"Slide {s_idx}")
+        hp.text = h_text
         hp.font.name = FONT_FAMILY
-        hp.font.size = Pt(23)
+        if len(h_text) > 65:
+            hp.font.size = Pt(19)
+        elif len(h_text) > 42:
+            hp.font.size = Pt(21)
+        else:
+            hp.font.size = Pt(23)
         hp.font.bold = True
         hp.font.color.rgb = COLOR_NAVY
 
-        c_shape = slide.shapes.add_shape(MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, Inches(0.9), Inches(1.88), Inches(11.533), Inches(4.75))
-        c_shape.fill.solid()
-        c_shape.fill.fore_color.rgb = COLOR_CARD_BG
-        c_shape.line.color.rgb = COLOR_BORDER
-        c_shape.line.width = Pt(1)
+        raw_points = slide_data.get("points", [])
+        points = [_trim_bullet_text(pt, max_words=26) for pt in raw_points]
+        if not points:
+            points = ["Core theoretical and empirical deliverables documented in the research work."]
 
-        c_tf = c_shape.text_frame
-        c_tf.word_wrap = True
-        c_tf.vertical_anchor = MSO_ANCHOR.TOP
-        c_tf.margin_left = c_tf.margin_right = Inches(0.4)
-        c_tf.margin_top = c_tf.margin_bottom = Inches(0.35)
+        if len(points) >= 4:
+            # Two-column cards layout for widescreen balance
+            midpoint = max(1, (len(points) + 1) // 2)
+            cols = [
+                (Inches(0.9), Inches(5.6), points[:midpoint], COLOR_INDIGO),
+                (Inches(6.833), Inches(5.6), points[midpoint:], COLOR_COBALT),
+            ]
+            for c_left, c_width, c_points, c_color in cols:
+                col_card = slide.shapes.add_shape(
+                    MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE,
+                    c_left, Inches(1.88), c_width, Inches(4.75)
+                )
+                col_card.fill.solid()
+                col_card.fill.fore_color.rgb = COLOR_CARD_BG
+                col_card.line.color.rgb = COLOR_BORDER
+                col_card.line.width = Pt(1)
 
-        points = slide_data.get("points", [])
-        for p_idx, pt in enumerate(points):
-            lead, body = _split_lead(pt)
-            p = c_tf.paragraphs[0] if p_idx == 0 else c_tf.add_paragraph()
-            p.space_after = Pt(14)
-            p.line_spacing = 1.25
+                f_sz, sp_aft, l_sp = _calculate_adaptive_typography(c_points, max_available_height_inches=4.0)
+                col_box = slide.shapes.add_textbox(c_left + Inches(0.3), Inches(2.2), c_width - Inches(0.6), Inches(4.2))
+                c_tf = col_box.text_frame
+                c_tf.word_wrap = True
+                c_tf.margin_left = c_tf.margin_right = c_tf.margin_top = c_tf.margin_bottom = 0
 
-            rb = p.add_run()
-            rb.text = "•  "
-            rb.font.size = Pt(14)
-            rb.font.bold = True
-            rb.font.color.rgb = COLOR_INDIGO
+                for p_idx, pt in enumerate(c_points):
+                    lead, body = _split_lead(pt)
+                    p = c_tf.paragraphs[0] if p_idx == 0 else c_tf.add_paragraph()
+                    p.space_after = sp_aft
+                    p.line_spacing = l_sp
+                    rb = p.add_run()
+                    rb.text = "•  "
+                    rb.font.name = FONT_FAMILY
+                    rb.font.size = f_sz
+                    rb.font.bold = True
+                    rb.font.color.rgb = c_color
+                    if lead:
+                        rl = p.add_run()
+                        rl.text = lead
+                        rl.font.name = FONT_FAMILY
+                        rl.font.size = f_sz
+                        rl.font.bold = True
+                        rl.font.color.rgb = COLOR_NAVY
+                    rt = p.add_run()
+                    rt.text = body
+                    rt.font.name = FONT_FAMILY
+                    rt.font.size = f_sz
+                    rt.font.color.rgb = COLOR_BODY
+        else:
+            # Single card with adaptive typography
+            c_shape = slide.shapes.add_shape(MSO_AUTO_SHAPE_TYPE.ROUNDED_RECTANGLE, Inches(0.9), Inches(1.88), Inches(11.533), Inches(4.75))
+            c_shape.fill.solid()
+            c_shape.fill.fore_color.rgb = COLOR_CARD_BG
+            c_shape.line.color.rgb = COLOR_BORDER
+            c_shape.line.width = Pt(1)
 
-            if lead:
-                rl = p.add_run()
-                rl.text = lead
-                rl.font.size = Pt(14)
-                rl.font.bold = True
-                rl.font.color.rgb = COLOR_NAVY
+            f_sz, sp_aft, l_sp = _calculate_adaptive_typography(points, max_available_height_inches=4.0)
+            box_top = Inches(2.5) if len(points) <= 2 else Inches(2.2)
+            box_height = Inches(3.8) if len(points) <= 2 else Inches(4.2)
+            c_box = slide.shapes.add_textbox(Inches(1.2), box_top, Inches(10.933), box_height)
+            c_tf = c_box.text_frame
+            c_tf.word_wrap = True
+            c_tf.margin_left = c_tf.margin_right = c_tf.margin_top = c_tf.margin_bottom = 0
 
-            rt = p.add_run()
-            rt.text = body
-            rt.font.size = Pt(14)
-            rt.font.color.rgb = COLOR_BODY
+            for p_idx, pt in enumerate(points):
+                lead, body = _split_lead(pt)
+                p = c_tf.paragraphs[0] if p_idx == 0 else c_tf.add_paragraph()
+                p.space_after = sp_aft
+                p.line_spacing = l_sp
+
+                rb = p.add_run()
+                rb.text = "•  "
+                rb.font.name = FONT_FAMILY
+                rb.font.size = f_sz
+                rb.font.bold = True
+                rb.font.color.rgb = COLOR_INDIGO
+
+                if lead:
+                    rl = p.add_run()
+                    rl.text = lead
+                    rl.font.name = FONT_FAMILY
+                    rl.font.size = f_sz
+                    rl.font.bold = True
+                    rl.font.color.rgb = COLOR_NAVY
+
+                rt = p.add_run()
+                rt.text = body
+                rt.font.name = FONT_FAMILY
+                rt.font.size = f_sz
+                rt.font.color.rgb = COLOR_BODY
 
         div = slide.shapes.add_shape(MSO_AUTO_SHAPE_TYPE.RECTANGLE, Inches(0.9), Inches(6.82), Inches(11.533), Pt(0.75))
         div.fill.solid()

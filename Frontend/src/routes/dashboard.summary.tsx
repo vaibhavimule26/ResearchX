@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  Download,
   Copy,
   Check,
   Sparkles,
@@ -11,7 +10,6 @@ import {
   Search,
   RotateCcw,
   ArrowRight,
-  ShieldCheck,
   Upload,
   ChevronDown,
   Layers,
@@ -24,13 +22,13 @@ import {
   FileSpreadsheet,
   Clock,
   Compass,
-  FileCode,
   MessageSquare,
 } from "lucide-react";
 
 import { PageHeader } from "@/components/dashboard/topbar";
 import { Button } from "@/components/ui/button";
-import { getPapers, runAnalysis } from "@/lib/api";
+import { getPapers, runAnalysis, agentExecutionManager, AgentCancelledError } from "@/lib/api";
+import { AgentEvaluationCard } from "@/components/dashboard/agent-evaluation-card";
 
 export const Route = createFileRoute("/dashboard/summary")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -56,7 +54,7 @@ const SUGGESTED_QUERIES = [
   "Full Executive Summary",
   "Methodology & Architecture",
   "Key Findings & Baselines",
-  "Plagiarism & Originality Audit",
+  "Core Contributions & Innovations",
 ];
 
 // Helper to safely extract markdown text from any response structure
@@ -96,6 +94,16 @@ function normalizeMarkdown(content: string): string {
     .replace(/\r\n/g, "\n")
     .replace(/\ufffd/g, "—");
 
+  // Strip any Plagiarism & Originality Audit section from summary display
+  text = text.replace(
+    /###\s*\d*\.?\s*(?:Plagiarism|Originality|Similarity|Academic\s*Integrity)\b[^\n]*\n[\s\S]*?(?=(?:\n###|\Z))/gi,
+    ""
+  );
+  text = text.replace(
+    /^\s*[-*]\s+\*\*(?:Estimated\s+Originality|Similarity\s+Risk|Novelty\s+vs|Academic\s+Integrity\s+Verdict|Textual\s+(?:&|and)\s+Conceptual\s+Authenticity|Textual\s+Uniqueness|Attribution\s+(?:&|and)\s+Paraphrasing)[^*]*\*\*:[^\n]*\n?/gim,
+    ""
+  );
+
   text = text.replace(/([^\n])\n(#{1,6}\s+[^\n]+)/g, "$1\n\n$2");
   text = text.replace(/([^\n\-\*\d])\n([*-]\s+)/g, "$1\n\n$2");
   return text.trim();
@@ -114,20 +122,6 @@ function SummaryCommandCenterPage() {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
   const [showPaperSelector, setShowPaperSelector] = useState(false);
-  const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
-
-  const exportRef = useRef<HTMLDivElement>(null);
-
-  // Close export dropdown when clicking outside
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (exportRef.current && !exportRef.current.contains(event.target as Node)) {
-        setExportDropdownOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   // ==========================
   // Load Uploaded Papers
@@ -162,6 +156,12 @@ function SummaryCommandCenterPage() {
     loadPapers();
   }, [search.paper]);
 
+  useEffect(() => {
+    return () => {
+      agentExecutionManager.stop("summary");
+    };
+  }, []);
+
   // ==========================
   // Execute Summary Agent
   // ==========================
@@ -192,7 +192,10 @@ function SummaryCommandCenterPage() {
       }
 
       setSummary(resultText);
-    } catch (err) {
+    } catch (err: any) {
+      if (err instanceof AgentCancelledError || err?.name === "AbortError") {
+        return;
+      }
       setError(
         err instanceof Error
           ? err.message
@@ -215,50 +218,6 @@ function SummaryCommandCenterPage() {
     } catch {
       setError("Failed to copy summary to clipboard");
     }
-  };
-
-  // ==========================
-  // Client-Side Downloads
-  // ==========================
-  const exportAsFile = (extension: "md" | "txt") => {
-    if (!summary) return;
-
-    const content =
-      extension === "md"
-        ? [
-            `# ResearchX AI Summary: ${selectedPaper}`,
-            activeQuery ? `**Research Query:** ${activeQuery}` : "**Analysis:** Executive Research Summary",
-            `**Generated:** ${new Date().toLocaleString()}`,
-            "",
-            "---",
-            "",
-            summary,
-          ].join("\n\n")
-        : [
-            `ResearchX AI Summary: ${selectedPaper}`,
-            activeQuery ? `Research Query: ${activeQuery}` : "Analysis: Executive Research Summary",
-            `Generated: ${new Date().toLocaleString()}`,
-            "",
-            "=".repeat(60),
-            "",
-            summary.replace(/#{1,6}\s*/g, "").replace(/\*\*/g, ""),
-          ].join("\n\n");
-
-    const mimeType = extension === "md" ? "text/markdown;charset=utf-8" : "text/plain;charset=utf-8";
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    const safeFilename = selectedPaper
-      .replace(/\.pdf$/i, "")
-      .replace(/[^a-zA-Z0-9-_]/g, "_");
-
-    anchor.href = url;
-    anchor.download = `${safeFilename}-research-summary.${extension}`;
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    URL.revokeObjectURL(url);
-    setExportDropdownOpen(false);
   };
 
   const selectedPaperObj = papers.find((p) => p.filename === selectedPaper);
@@ -285,64 +244,26 @@ function SummaryCommandCenterPage() {
             </Link>
 
             {summary && (
-              <>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={copySummary}
-                  disabled={loading}
-                  className="h-9 gap-1.5 border-border/60 text-xs font-medium"
-                >
-                  {copied ? (
-                    <>
-                      <Check className="h-3.5 w-3.5 text-emerald-400" />
-                      Copied!
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3.5 w-3.5" />
-                      Copy Summary
-                    </>
-                  )}
-                </Button>
-
-                <div className="relative" ref={exportRef}>
-                  <Button
-                    type="button"
-                    variant="hero"
-                    size="sm"
-                    onClick={() => setExportDropdownOpen((prev) => !prev)}
-                    disabled={loading}
-                    className="h-9 gap-1.5 text-xs font-medium cursor-pointer"
-                  >
-                    <Download className="h-3.5 w-3.5" />
-                    Export
-                    <ChevronDown className="h-3 w-3 opacity-70" />
-                  </Button>
-
-                  {exportDropdownOpen && (
-                    <div className="absolute right-0 top-full mt-1.5 w-44 rounded-xl border border-border/60 bg-card p-1.5 shadow-xl z-50 backdrop-blur-xl animate-in fade-in-50 zoom-in-95">
-                      <button
-                        type="button"
-                        onClick={() => exportAsFile("md")}
-                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-foreground hover:bg-secondary/60 transition-colors"
-                      >
-                        <FileCode className="h-3.5 w-3.5 text-primary" />
-                        Export Markdown (.md)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => exportAsFile("txt")}
-                        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium text-foreground hover:bg-secondary/60 transition-colors"
-                      >
-                        <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                        Export Text (.txt)
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={copySummary}
+                disabled={loading}
+                className="h-9 gap-1.5 border-border/60 text-xs font-medium"
+              >
+                {copied ? (
+                  <>
+                    <Check className="h-3.5 w-3.5 text-emerald-400" />
+                    Copied!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3.5 w-3.5" />
+                    Copy Summary
+                  </>
+                )}
+              </Button>
             )}
           </div>
         }
@@ -697,23 +618,12 @@ function SummaryCommandCenterPage() {
                     h2: ({ node, ...props }) => (
                       <h2 className="text-lg font-bold mt-5 mb-2.5 text-foreground font-display tracking-tight" {...props} />
                     ),
-                    h3: ({ node, children, ...props }: any) => {
-                      const headingText = typeof children === "string" ? children : Array.isArray(children) ? children.join("") : "";
-                      const isAudit = /plagiarism|originality|authenticity/i.test(headingText);
-                      return (
-                        <h3
-                          className={`text-base font-semibold mt-5 mb-2 font-display border-b pb-1 tracking-tight flex items-center gap-2 ${
-                            isAudit
-                              ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/5 px-3 py-1.5 rounded-xl mt-6"
-                              : "text-primary border-border/30"
-                          }`}
-                          {...props}
-                        >
-                          {isAudit && <ShieldCheck className="h-4 w-4 text-emerald-400 shrink-0" />}
-                          <span>{children}</span>
-                        </h3>
-                      );
-                    },
+                    h3: ({ node, ...props }) => (
+                      <h3
+                        className="text-base font-semibold mt-5 mb-2 font-display border-b pb-1 tracking-tight flex items-center gap-2 text-primary border-border/30"
+                        {...props}
+                      />
+                    ),
                     h4: ({ node, ...props }) => (
                       <h4 className="text-sm font-semibold mt-3 mb-1 text-foreground font-display tracking-tight" {...props} />
                     ),
@@ -727,7 +637,7 @@ function SummaryCommandCenterPage() {
                       <ol className="list-decimal pl-5 space-y-1.5 mb-3 text-foreground/90" {...props} />
                     ),
                     li: ({ node, children, ...props }: any) => (
-                      <li className="leading-relaxed pl-0.5" {...props}>
+                      <li className="leading-relaxed pl-1 [&>p]:inline [&>p]:mb-0 [&>p]:leading-relaxed [&>p+p]:block [&>p+p]:mt-1" {...props}>
                         {children}
                       </li>
                     ),
@@ -761,7 +671,16 @@ function SummaryCommandCenterPage() {
                 </ReactMarkdown>
               </div>
             </div>
+
+            {/* Scholarly Accuracy & Factuality Evaluation Card */}
+            <AgentEvaluationCard
+              agentName="summary"
+              agentTitle="Summary Agent"
+              outputText={normalizeMarkdown(summary)}
+              paperName={selectedPaper}
+            />
           </div>
+
 
           {/* RIGHT: Insight & Context Column (4 cols) */}
           <div className="lg:col-span-4 space-y-5">
