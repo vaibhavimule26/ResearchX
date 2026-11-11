@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   Search, FileText, Sparkles, Lightbulb, Database, FlaskConical,
   BookOpen, FileSpreadsheet, Presentation, Network, GitBranch, Workflow as WorkflowIcon,
-  Bot, Brain, Layers, ArrowRight, Play, Calendar, Check, X,
+  Bot, Brain, Layers, ArrowRight, Check, X,
   Zap, Clock, Target, Shield, Globe, Cpu, ChevronDown, Quote, Star, MessageSquare,
 } from "lucide-react";
 import { Navbar } from "@/components/site/navbar";
@@ -95,24 +95,12 @@ function Hero() {
               ✓ PPT Generator
             </span>
           </div>
-          <div className="mt-6 flex flex-wrap gap-3">
+          <div className="mt-6 flex flex-wrap items-center gap-3">
             <Button asChild variant="hero" size="lg">
               <Link to="/register">Get Started Free</Link>
             </Button>
             <Button asChild variant="outline" size="lg">
               <a href="#features">Learn More</a>
-            </Button>
-            <Button asChild variant="glass" size="lg">
-              <Link to="/demo">
-                <Play className="mr-2 h-4 w-4" />
-                Watch Demo
-              </Link>
-            </Button>
-            <Button asChild variant="ghost" size="lg">
-              <Link to="/book-demo">
-                <Calendar className="mr-2 h-4 w-4" />
-                Book Demo
-              </Link>
             </Button>
           </div>
           <div className="mt-10 flex items-center gap-6 text-xs text-muted-foreground">
